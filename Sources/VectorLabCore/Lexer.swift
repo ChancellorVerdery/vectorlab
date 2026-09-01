@@ -3,7 +3,8 @@ import Foundation
 enum Token: Equatable {
     case number(Double)
     case ident(String)
-    case vecKeyword          // \vec, \vector, \hat, or plain "vec" — cosmetic prefix
+    case vecKeyword          // \vec, \vector, or plain "vec" — cosmetic prefix
+    case hatKeyword          // \hat X names the distinct identifier X̂
     case plus, minus, star, slash, caret, equals, comma
     case lparen, rparen, langle, rangle, lbracket, rbracket
     case pipe, angleOp, dotOp, crossOp, degree, memberDot
@@ -38,7 +39,8 @@ enum Lexer {
             while i < chars.count, chars[i].isLetter || chars[i].isNumber || chars[i] == "_" {
                 s.append(chars[i]); i += 1
             }
-            return s
+            // û typed directly and u + combining hat must be the same name.
+            return s.precomposedStringWithCanonicalMapping
         }
 
         while i < chars.count {
@@ -55,7 +57,8 @@ enum Lexer {
                 i += 1
                 let cmd = scanIdent()
                 switch cmd {
-                case "vec", "vector", "hat", "overrightarrow": tokens.append(.vecKeyword)
+                case "vec", "vector", "overrightarrow": tokens.append(.vecKeyword)
+                case "hat": tokens.append(.hatKeyword)
                 case "cdot": tokens.append(.dotOp)
                 case "times": tokens.append(.crossOp)
                 case "langle": tokens.append(.langle)
@@ -74,8 +77,8 @@ enum Lexer {
             case "^": tokens.append(.caret)
             case "=": tokens.append(.equals)
             case ",": tokens.append(.comma)
-            case "(": tokens.append(.lparen)
-            case ")": tokens.append(.rparen)
+            case "(", "{": tokens.append(.lparen)   // LaTeX braces act as parens
+            case ")", "}": tokens.append(.rparen)
             case "<", "⟨", "〈": tokens.append(.langle)
             case ">", "⟩", "〉": tokens.append(.rangle)
             case "[": tokens.append(.lbracket)

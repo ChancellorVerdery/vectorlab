@@ -11,6 +11,7 @@ final class AppModel {
 
     var showAxes = true
     var showGrid = true
+    var showArrowheads = true
     var preset: CameraPreset = .iso
     var presetToken = 0
     var fitToken = 0

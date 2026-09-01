@@ -59,11 +59,20 @@ private struct EntryRow: View {
             .opacity(isDrawable ? 1 : 0.25)
 
             VStack(alignment: .leading, spacing: 1) {
-                TextField("type a vector, point, or expression…", text: $entry.text)
-                    .textFieldStyle(.plain)
-                    .font(.system(.body, design: .monospaced))
-                    .focused(focus, equals: entry.id)
-                    .onSubmit(onSubmit)
+                // ponytail: raw TextField when focused, MathPrint Text otherwise;
+                // unfocused rows aren't Tab-reachable — click to edit
+                if showsRawText {
+                    TextField("type a vector, point, or expression…", text: $entry.text)
+                        .textFieldStyle(.plain)
+                        .font(.system(.body, design: .monospaced))
+                        .focused(focus, equals: entry.id)
+                        .onSubmit(onSubmit)
+                } else {
+                    prettyText
+                        .contentShape(Rectangle())
+                        .onTapGesture { focus.wrappedValue = entry.id }
+                        .accessibilityHint("Tap to edit")
+                }
 
                 if let outcome {
                     if let message = outcome.errorMessage {
@@ -108,5 +117,22 @@ private struct EntryRow: View {
 
     private var isDrawable: Bool {
         outcome?.drawable != nil || outcome?.arc != nil
+    }
+
+    private var showsRawText: Bool {
+        focus.wrappedValue == entry.id
+            || entry.text.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    @ViewBuilder private var prettyText: some View {
+        let trimmed = entry.text.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("#") || trimmed.hasPrefix("//") {
+            Text(entry.text)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.secondary)
+        } else {
+            Text(MathPrint.pretty(entry.text))
+                .font(.system(.body, design: .serif))
+        }
     }
 }

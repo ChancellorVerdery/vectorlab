@@ -16,9 +16,10 @@ inline; vectors and points draw in the scene.
 ```
 a = <1, 2, 3>              vector  (also [1,2,3], (1,2,3), ⟨1,2,3⟩, \langle…\rangle)
 \vec F = 3i + 4j - 5k      component form
+F = cos(30)i + sin(30)j    calls multiply into i j k implicitly
 point A = (0, 0, 4)        point, drawn as a dot
 r_AB                       B − A once points A and B exist (drawn from A)
-u = unit(F)                unit vector
+\hat u = unit(F)           defines û, a variable distinct from u (also \hat(u), \hat{u})
 T = 50∠30                  2D polar: magnitude ∠ angle in degrees (also 50 @ 30)
 # heading                  comment line
 
@@ -40,6 +41,9 @@ sqrt ln log exp pi e       scalar math;  rad(x) / deg(x) convert
 Conventions: z is up (statics style), trig is in degrees, `i j k π e origin`
 are reserved. The notebook re-evaluates top-to-bottom on every edit and
 autosaves to `~/Library/Application Support/VectorLab/workspace.json`.
+Unfocused lines render as math notation (û, F⃗, ⟨…⟩, ·) — click to edit the
+raw text. Arrow girth and labels rescale with camera zoom; the arrowheads
+toggle in the toolbar draws vectors as plain lines.
 
 ## Layout
 

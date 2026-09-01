@@ -10,7 +10,41 @@ import Testing
     @Test func latexVecKeyword() throws {
         expectApprox(try vector(#"\vec a = <1, 2, 3>"#, "a"), Vec3(1, 2, 3))
         expectApprox(try vector(#"\vector b = [4, 5, 6]"#, "b"), Vec3(4, 5, 6))
-        expectApprox(try vector(#"\hat u = unit(<3, 4, 0>)"#, "u"), Vec3(0.6, 0.8, 0))
+        expectApprox(try vector(#"\hat u = unit(<3, 4, 0>)"#, "û"), Vec3(0.6, 0.8, 0))
+    }
+
+    @Test func hatIsADistinctVariable() throws {
+        expectApprox(try scalar("u = <9, 9, 9>", #"\hat u = i"#, "u.x"), 9)
+        expectApprox(try scalar("u = <9, 9, 9>", #"\hat u = i"#, "û.x"), 1)
+        expectApprox(try scalar("û = j", #"\hat u · j"#), 1)   // typed û ≡ \hat u
+    }
+
+    @Test func hatParenAndBraceForms() throws {
+        let expected = Vec3(3.0.squareRoot() / 2, 0.5, 0)
+        expectApprox(try vector("theta = 30", #"\hat(u) = cos(theta)i + sin(theta)j"#, "û"),
+                     expected, tolerance: 1e-12)
+        expectApprox(try vector("theta = 30", #"\hat{u} = cos(theta)i + sin(theta)j"#, "û"),
+                     expected, tolerance: 1e-12)
+        // The exact line from user feedback, spaces and all:
+        let outcomes = Engine.evaluate(["theta = 30", #"\hat(u)= cos(theta)i + sin(theta)j"#, "|û|"])
+        #expect(outcomes.allSatisfy { $0.errorMessage == nil })
+    }
+
+    @Test func implicitMultiplyAfterCloseParen() throws {
+        expectApprox(try vector("theta = 30", "F = cos(theta)i + sin(theta)j"),
+                     Vec3(3.0.squareRoot() / 2, 0.5, 0), tolerance: 1e-12)
+        expectApprox(try scalar("(2)(3)"), 6)
+        expectApprox(try scalar("mag(<3, 4, 0>)(2)"), 10)
+    }
+
+    @Test func mathPrintPretty() {
+        #expect(MathPrint.pretty(#"\hat u = unit(F)"#) == "û = unit(F)")
+        #expect(MathPrint.pretty(#"\hat(u) = 2"#) == "û = 2")
+        #expect(MathPrint.pretty(#"\vec F = 3i + 4j"#).hasPrefix("F\u{20D7}"))
+        #expect(MathPrint.pretty("a = <1, 2, 3>") == "a = ⟨1, 2, 3⟩")
+        #expect(MathPrint.pretty("a * b") == "a · b")
+        #expect(MathPrint.pretty("2 pi") == "2 π")
+        #expect(MathPrint.pretty("point A = (0, 0, 0)") == "point A = (0, 0, 0)")
     }
 
     @Test func latexAngleBrackets() throws {

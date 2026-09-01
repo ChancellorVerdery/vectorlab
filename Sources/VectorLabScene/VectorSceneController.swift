@@ -16,6 +16,17 @@ public final class VectorSceneController {
     private let gridNode = SCNNode()
     private var extent: Double = 5
 
+    /// Nodes whose girth/size should track camera distance so arrows stay
+    /// slim on screen at any zoom. radial = scale x/z only (keeps length).
+    private struct Scalable {
+        let node: SCNNode
+        let radial: Bool
+        let base: Double
+    }
+    private var contentScalables: [Scalable] = []
+    private var axesScalables: [Scalable] = []
+    private var screenFactor: Double = 1
+
     public init() {
         scene.background.contents = NSColor(red: 0.075, green: 0.085, blue: 0.12, alpha: 1)
 
@@ -39,7 +50,8 @@ public final class VectorSceneController {
 
     // MARK: - Content
 
-    public func update(items: [ColoredDrawable], arcs: [ColoredArc], showAxes: Bool, showGrid: Bool) {
+    public func update(items: [ColoredDrawable], arcs: [ColoredArc], showAxes: Bool, showGrid: Bool,
+                       showArrowheads: Bool = true) {
         var maxCoord = 2.0
         func fold(_ v: Vec3) {
             let c = v.maxAbsComponent
@@ -68,11 +80,31 @@ public final class VectorSceneController {
 
         // ponytail: full rebuild per edit; diff nodes only if scenes ever get huge
         contentNode.childNodes.forEach { $0.removeFromParentNode() }
+        contentScalables.removeAll()
+
+        // Seed label obstacles: axis labels, every arrow tip, every point.
+        labelObstacles.removeAll()
+        for axis in [Vec3(1, 0, 0), Vec3(0, 1, 0), Vec3(0, 0, 1)] {
+            labelObstacles.append((axis * (extent * 1.07), labelScale))
+        }
+        for item in items {
+            switch item.drawable.shape {
+            case .arrow(let tail, let vec) where vec.length > 1e-9:
+                let tipLength = min(0.25 * vec.length, 0.04 * extent + 0.06)
+                labelObstacles.append((tail + vec, tipLength + labelScale * 0.3))
+            case .arrow(let tail, _):
+                labelObstacles.append((tail, labelScale * 0.5))
+            case .point(let p):
+                labelObstacles.append((p, 0.009 * extent + 0.02 + labelScale * 0.3))
+            }
+        }
+
         for item in items {
             let color = Palette.color(item.colorIndex)
             switch item.drawable.shape {
             case .arrow(let tail, let vec):
-                contentNode.addChildNode(arrowNode(tail: tail, vec: vec, color: color, label: item.drawable.label))
+                contentNode.addChildNode(arrowNode(tail: tail, vec: vec, color: color,
+                                                   label: item.drawable.label, showHead: showArrowheads))
             case .point(let p):
                 contentNode.addChildNode(pointNode(at: p, color: color, label: item.drawable.label))
             }
@@ -80,6 +112,30 @@ public final class VectorSceneController {
         for colored in arcs {
             if let node = arcNode(colored.arc, color: Palette.color(colored.colorIndex)) {
                 contentNode.addChildNode(node)
+            }
+        }
+        applyScreenScale()   // new nodes match the current zoom immediately
+    }
+
+    /// Called every frame with the live camera position: rescales girth and
+    /// labels so they look constant-size on screen instead of clunky up close.
+    public func updateScreenScale(cameraPosition p: SCNVector3) {
+        let d = (Double(p.x) * Double(p.x) + Double(p.y) * Double(p.y) + Double(p.z) * Double(p.z)).squareRoot()
+        guard d.isFinite, d > 0 else { return }
+        let factor = min(3.0, max(0.15, d / (extent * 2.9)))   // 1.0 at preset distance
+        guard abs(factor - screenFactor) > screenFactor * 0.03 else { return }
+        screenFactor = factor
+        applyScreenScale()
+    }
+
+    private func applyScreenScale() {
+        let f = screenFactor
+        for s in contentScalables + axesScalables {
+            if s.radial {
+                s.node.scale = SCNVector3(f, 1, f)
+            } else {
+                let b = s.base * f
+                s.node.scale = SCNVector3(b, b, b)
             }
         }
     }
@@ -130,7 +186,15 @@ public final class VectorSceneController {
 
     // MARK: - Node builders
 
-    private var labelScale: Double { max(0.18, extent * 0.035) }
+    private var labelScale: Double { max(0.15, extent * 0.028) }
+
+    private func registerScalable(_ node: SCNNode, radial: Bool, base: Double = 1, axes: Bool = false) {
+        if axes {
+            axesScalables.append(Scalable(node: node, radial: radial, base: base))
+        } else {
+            contentScalables.append(Scalable(node: node, radial: radial, base: base))
+        }
+    }
 
     private func material(_ color: NSColor, constant: Bool = false) -> SCNMaterial {
         let m = SCNMaterial()
@@ -153,22 +217,27 @@ public final class VectorSceneController {
         }
     }
 
-    private func arrowNode(tail: Vec3, vec: Vec3, color: NSColor, label: String?) -> SCNNode {
+    private func arrowNode(tail: Vec3, vec: Vec3, color: NSColor, label: String?, showHead: Bool) -> SCNNode {
         let node = SCNNode()
         node.position = s(tail)
         let length = vec.length
 
         guard length > 1e-9, let dir = vec.normalized else {
             // Zero vector: a small marker at the tail so M = 0 still shows up.
-            let g = SCNSphere(radius: 0.05 * labelScale + 0.04)
+            let g = SCNSphere(radius: 0.03 * labelScale + 0.03)
             g.materials = [material(color)]
-            node.addChildNode(SCNNode(geometry: g))
-            if let label { node.addChildNode(textNode(label, color: color, offset: Vec3(0, 0, 0.25))) }
+            let marker = SCNNode(geometry: g)
+            node.addChildNode(marker)
+            registerScalable(marker, radial: false)
+            if let label {
+                addLabel(label, color: color, to: node, parentOrigin: tail,
+                         desired: tail + Vec3(0, 0, 0.25), escape: Vec3(0, 0, 1))
+            }
             return node
         }
 
-        let tipLength = min(0.3 * length, 0.06 * extent + 0.1)
-        let shaftRadius = 0.0055 * extent
+        let tipLength = showHead ? min(0.25 * length, 0.04 * extent + 0.06) : 0
+        let shaftRadius = 0.003 * extent
 
         let aligned = SCNNode()
         orient(aligned, along: dir)
@@ -178,19 +247,23 @@ public final class VectorSceneController {
         shaft.materials = [material(color)]
         let shaftNode = SCNNode(geometry: shaft)
         shaftNode.position.y = (length - tipLength) / 2
-
-        let cone = SCNCone(topRadius: 0, bottomRadius: shaftRadius * 3.2, height: tipLength)
-        cone.radialSegmentCount = 16
-        cone.materials = [material(color)]
-        let coneNode = SCNNode(geometry: cone)
-        coneNode.position.y = length - tipLength / 2
-
         aligned.addChildNode(shaftNode)
-        aligned.addChildNode(coneNode)
+        registerScalable(shaftNode, radial: true)
+
+        if showHead {
+            let cone = SCNCone(topRadius: 0, bottomRadius: shaftRadius * 2.8, height: tipLength)
+            cone.radialSegmentCount = 16
+            cone.materials = [material(color)]
+            let coneNode = SCNNode(geometry: cone)
+            coneNode.position.y = length - tipLength / 2
+            aligned.addChildNode(coneNode)
+            registerScalable(coneNode, radial: true)
+        }
         node.addChildNode(aligned)
 
         if let label {
-            node.addChildNode(textNode(label, color: color, offset: vec + dir * (labelScale * 1.6)))
+            addLabel(label, color: color, to: node, parentOrigin: tail,
+                     desired: tail + vec + dir * (labelScale * 1.6), escape: dir)
         }
         return node
     }
@@ -198,32 +271,64 @@ public final class VectorSceneController {
     private func pointNode(at p: Vec3, color: NSColor, label: String?) -> SCNNode {
         let node = SCNNode()
         node.position = s(p)
-        let g = SCNSphere(radius: 0.014 * extent + 0.03)
+        let g = SCNSphere(radius: 0.009 * extent + 0.02)
         g.segmentCount = 24
         g.materials = [material(color)]
-        node.addChildNode(SCNNode(geometry: g))
+        let sphere = SCNNode(geometry: g)
+        node.addChildNode(sphere)
+        registerScalable(sphere, radial: false)
         if let label {
-            node.addChildNode(textNode(label, color: color, offset: Vec3(0, 0, 0.05 * extent)))
+            let off = Vec3(0.55, 0, 0.83)
+            addLabel(label, color: color, to: node, parentOrigin: p,
+                     desired: p + off * (0.05 * extent), escape: off)
         }
         return node
     }
 
-    private func textNode(_ string: String, color: NSColor, offset: Vec3) -> SCNNode {
+    // MARK: - Labels
+
+    /// Occupied spots (math coords) that labels must clear: arrow tips,
+    /// points, axis labels, and labels already placed this rebuild.
+    private var labelObstacles: [(pos: Vec3, radius: Double)] = []
+
+    private func makeLabel(_ string: String, color: NSColor, axes: Bool = false) -> (node: SCNNode, halfWidth: Double) {
         let text = SCNText(string: string, extrusionDepth: 0)
         text.font = .monospacedSystemFont(ofSize: 1, weight: .semibold)
         text.flatness = 0.05
-        text.materials = [material(color, constant: true)]
+        let m = material(color, constant: true)
+        m.readsFromDepthBuffer = false   // labels draw on top, never inside geometry
+        text.materials = [m]
 
         let node = SCNNode(geometry: text)
+        node.renderingOrder = 100
         let scale = labelScale
         node.scale = SCNVector3(scale, scale, scale)
+        registerScalable(node, radial: false, base: scale, axes: axes)
 
         // Center the text on its position.
         let (minB, maxB) = text.boundingBox
         node.pivot = SCNMatrix4MakeTranslation((minB.x + maxB.x) / 2, (minB.y + maxB.y) / 2, 0)
-        node.position = s(offset)
         node.constraints = [SCNBillboardConstraint()]
-        return node
+        return (node, Double(maxB.x - minB.x) / 2 * scale)
+    }
+
+    /// Adds a content label at `desired`, nudged along `escape` until it
+    /// stops overlapping registered obstacles. Positions are math coords.
+    private func addLabel(_ string: String, color: NSColor, to parent: SCNNode,
+                          parentOrigin: Vec3, desired: Vec3, escape: Vec3) {
+        let (node, halfWidth) = makeLabel(string, color: color)
+        let radius = max(halfWidth, labelScale * 0.6)
+        let dir = escape.normalized ?? Vec3(0, 0, 1)
+        var pos = desired
+        var attempts = 0
+        while attempts < 10,
+              labelObstacles.contains(where: { ($0.pos - pos).length < ($0.radius + radius) * 0.9 }) {
+            pos = pos + dir * (labelScale * 0.9)
+            attempts += 1
+        }
+        labelObstacles.append((pos, radius))
+        node.position = s(pos - parentOrigin)
+        parent.addChildNode(node)
     }
 
     private func arcNode(_ arc: ArcSpec, color: NSColor) -> SCNNode? {
@@ -254,15 +359,10 @@ public final class VectorSceneController {
 
         let node = SCNNode(geometry: geometry)
         let mid = theta / 2
-        let labelPos = arc.origin + radius * 1.45 * (cos(mid) * ua + sin(mid) * w)
-        node.addChildNode(labelNodeAtWorld(Fmt.num(arc.degrees) + "°", color: color, worldPos: labelPos))
+        let bisector = cos(mid) * ua + sin(mid) * w
+        addLabel(Fmt.num(arc.degrees) + "°", color: color, to: node, parentOrigin: .zero,
+                 desired: arc.origin + radius * 1.45 * bisector, escape: bisector)
         return node
-    }
-
-    private func labelNodeAtWorld(_ string: String, color: NSColor, worldPos: Vec3) -> SCNNode {
-        let n = textNode(string, color: color, offset: .zero)
-        n.position = s(worldPos)
-        return n
     }
 
     // MARK: - Axes & grid
@@ -270,6 +370,7 @@ public final class VectorSceneController {
     private func rebuildAxesAndGrid() {
         axesNode.childNodes.forEach { $0.removeFromParentNode() }
         gridNode.childNodes.forEach { $0.removeFromParentNode() }
+        axesScalables.removeAll()
 
         let axes: [(Vec3, NSColor, String)] = [
             (Vec3(1, 0, 0), .systemRed, "x"),
@@ -285,7 +386,7 @@ public final class VectorSceneController {
     private func axisNode(dir: Vec3, color: NSColor, label: String) -> SCNNode {
         let node = SCNNode()
         let e = extent
-        let radius = 0.0035 * e
+        let radius = 0.002 * e
 
         let aligned = SCNNode()
         orient(aligned, along: dir)
@@ -293,16 +394,21 @@ public final class VectorSceneController {
         let shaft = SCNCylinder(radius: radius, height: 2 * e)
         shaft.radialSegmentCount = 12
         shaft.materials = [material(color.withAlphaComponent(0.8))]
-        aligned.addChildNode(SCNNode(geometry: shaft))   // centered: spans -e…+e
+        let shaftNode = SCNNode(geometry: shaft)   // centered: spans -e…+e
+        aligned.addChildNode(shaftNode)
+        registerScalable(shaftNode, radial: true, axes: true)
 
-        let cone = SCNCone(topRadius: 0, bottomRadius: radius * 4, height: 0.045 * e)
+        let cone = SCNCone(topRadius: 0, bottomRadius: radius * 3.5, height: 0.03 * e)
         cone.materials = [material(color)]
         let coneNode = SCNNode(geometry: cone)
         coneNode.position.y = e
         aligned.addChildNode(coneNode)
+        registerScalable(coneNode, radial: true, axes: true)
 
         node.addChildNode(aligned)
-        node.addChildNode(textNode(label, color: color, offset: dir * (e * 1.07)))
+        let (labelNode, _) = makeLabel(label, color: color, axes: true)
+        labelNode.position = s(dir * (e * 1.07))
+        node.addChildNode(labelNode)
         return node
     }
 

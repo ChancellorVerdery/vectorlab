@@ -20,6 +20,7 @@ struct ContentView: View {
                 arcs: model.coloredArcs,
                 showAxes: model.showAxes,
                 showGrid: model.showGrid,
+                showArrowheads: model.showArrowheads,
                 preset: model.preset,
                 presetToken: model.presetToken,
                 fitToken: model.fitToken
@@ -47,6 +48,7 @@ struct ContentView: View {
 
                 Toggle("Axes", systemImage: "move.3d", isOn: $model.showAxes)
                 Toggle("Grid", systemImage: "grid", isOn: $model.showGrid)
+                Toggle("Arrowheads", systemImage: "arrowtriangle.up", isOn: $model.showArrowheads)
 
                 Button("Save snapshot", systemImage: "camera", action: saveSnapshot)
 

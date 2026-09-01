@@ -32,8 +32,38 @@ struct Parser {
         if trimmed.isEmpty { return .blank }
         if trimmed.hasPrefix("#") || trimmed.hasPrefix("//") { return .comment(trimmed) }
 
-        var p = Parser(tokens: try Lexer.tokenize(trimmed))
+        var p = Parser(tokens: try Self.foldHats(Lexer.tokenize(trimmed)))
         return try p.statement()
+    }
+
+    /// \hat u (also \hat(u) and \hat{u}) collapses to the single distinct
+    /// identifier û before parsing, so hats work anywhere a name does.
+    private static func foldHats(_ tokens: [Token]) throws -> [Token] {
+        var out: [Token] = []
+        var i = 0
+        while i < tokens.count {
+            guard tokens[i] == .hatKeyword else {
+                out.append(tokens[i])
+                i += 1
+                continue
+            }
+            var j = i + 1
+            let wrapped = j < tokens.count && tokens[j] == .lparen
+            if wrapped { j += 1 }
+            guard j < tokens.count, case .ident(let n) = tokens[j] else {
+                throw EvalError("\\hat takes a single name, like \\hat u or \\hat(u)")
+            }
+            j += 1
+            if wrapped {
+                guard j < tokens.count, tokens[j] == .rparen else {
+                    throw EvalError("\\hat takes a single name, like \\hat u or \\hat(u)")
+                }
+                j += 1
+            }
+            out.append(.ident((n + "\u{0302}").precomposedStringWithCanonicalMapping))
+            i = j
+        }
+        return out
     }
 
     private init(tokens: [Token]) { self.tokens = tokens }
@@ -111,10 +141,15 @@ struct Parser {
         }
     }
 
-    /// True when the token just consumed was a number literal.
-    private func previousTokenIsNumber() -> Bool {
-        guard i > 0, case .number = tokens[i - 1] else { return false }
-        return true
+    /// True when the token just consumed can be the left side of an implicit
+    /// multiply: a number literal (3i, 2x) or a closing paren — engineers
+    /// write cos(theta)i + sin(theta)j.
+    private func previousTokenAllowsImplicitMul() -> Bool {
+        guard i > 0 else { return false }
+        switch tokens[i - 1] {
+        case .number, .rparen: return true
+        default: return false
+        }
     }
 
     private mutating func multiplicative() throws -> Expr {
@@ -127,9 +162,9 @@ struct Parser {
             case .dotOp: op = .dotProduct
             case .crossOp: op = .crossProduct
             default:
-                // ponytail: juxtaposition multiplies only after a number literal
-                // (3i, 2x); chains like `2 pi r` or `(a+b)c` need explicit `*`
-                if startsImplicitFactor(t), previousTokenIsNumber() {
+                // ponytail: juxtaposition multiplies only after a number or `)`
+                // (3i, 2x, cos(t)i); ident chains like `2 pi r` need explicit `*`
+                if startsImplicitFactor(t), previousTokenAllowsImplicitMul() {
                     op = .mul
                 } else {
                     break loop
@@ -149,7 +184,7 @@ struct Parser {
             var angle = try unary()
             // Fold 10∠2theta / 10∠2(…): implicit multiply inside the angle operand,
             // which sits below multiplicative() and would otherwise miss it.
-            while let t = peek, t == .lparen || isIdentToken(t), previousTokenIsNumber() {
+            while let t = peek, t == .lparen || isIdentToken(t), previousTokenAllowsImplicitMul() {
                 angle = .binary(.mul, angle, try unary())
             }
             return .polar(lhs, angle)

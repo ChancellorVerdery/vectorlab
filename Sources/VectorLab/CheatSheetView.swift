@@ -7,7 +7,8 @@ struct CheatSheetView: View {
             ("\\vec F = 3i + 4j - 5k", "component form"),
             ("point A = (0, 0, 4)", "point, drawn as a dot"),
             ("r_AB", "B − A once points A, B exist"),
-            ("u = unit(F)", "unit vector along F"),
+            ("\\hat u = unit(F)", "defines û — its own variable (also \\hat(u))"),
+            ("F = cos(30)i + sin(30)j", "component form with trig"),
             ("T = 50∠30", "2D: magnitude ∠ angle°  (or 50 @ 30)"),
             ("# heading", "comment line"),
         ]),
@@ -54,6 +55,9 @@ struct CheatSheetView: View {
                         }
                     }
                 }
+                Text("Lines render as math notation when not being edited — click a line to edit its raw text.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             .padding(18)
         }

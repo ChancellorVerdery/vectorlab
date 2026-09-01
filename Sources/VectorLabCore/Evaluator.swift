@@ -172,6 +172,10 @@ struct Evaluator {
             switch (l, r) {
             case (.scalar(let a), .scalar(let b)): return .scalar(a * b)
             case (.vector(let a, _), .vector(let b, _)): return .scalar(a.dot(b))
+            // 2 · v is plain scaling — mathprint rewrites * as ·, so the
+            // rendered text must evaluate identically to the typed text.
+            case (.scalar(let s), .vector(let v, let a)): return .vector(s * v, anchor: a)
+            case (.vector(let v, let a), .scalar(let s)): return .vector(s * v, anchor: a)
             default: throw EvalError("dot product needs two vectors, got \(l.typeName) and \(r.typeName)")
             }
 

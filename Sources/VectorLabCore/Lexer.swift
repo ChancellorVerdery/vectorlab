@@ -14,6 +14,15 @@ enum Lexer {
     /// ASCII digits only — Unicode numerals like ² or ½ must error, not lex.
     private static func isDigit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
 
+    /// Identifier characters: ASCII letters/digits/underscore, plus any
+    /// letter-initial grapheme so û, θ, and F⃗ (letter + combining mark) work.
+    private static func isIdentChar(_ c: Character) -> Bool {
+        if c == "_" { return true }
+        if c.isASCII { return c.isLetter || c.isNumber }
+        guard let first = c.unicodeScalars.first else { return false }
+        return first.properties.isAlphabetic
+    }
+
     static func tokenize(_ input: String) throws -> [Token] {
         var tokens: [Token] = []
         let chars = Array(input)
@@ -36,11 +45,14 @@ enum Lexer {
 
         func scanIdent() -> String {
             var s = ""
-            while i < chars.count, chars[i].isLetter || chars[i].isNumber || chars[i] == "_" {
+            while i < chars.count, isIdentChar(chars[i]) {
                 s.append(chars[i]); i += 1
             }
+            // The combining arrow (F⃗) is cosmetic like \vec — F⃗ ≡ F.
             // û typed directly and u + combining hat must be the same name.
-            return s.precomposedStringWithCanonicalMapping
+            let cleaned = s.replacingOccurrences(of: "\u{20D7}", with: "")
+                .precomposedStringWithCanonicalMapping
+            return cleaned == "π" ? "pi" : cleaned
         }
 
         while i < chars.count {
@@ -48,7 +60,7 @@ enum Lexer {
             if c.isWhitespace { i += 1; continue }
             if isDigit(c) { try scanNumber(); continue }
             if c == ".", i + 1 < chars.count, isDigit(chars[i + 1]) { try scanNumber(); continue }
-            if c.isLetter || c == "_" {
+            if isIdentChar(c) {
                 let word = scanIdent()
                 tokens.append(word == "vec" ? .vecKeyword : .ident(word))
                 continue
@@ -90,6 +102,7 @@ enum Lexer {
             case "°": tokens.append(.degree)
             case ".": tokens.append(.memberDot)
             case "π": tokens.append(.ident("pi"))
+            case "√": tokens.append(.ident("sqrt"))
             default: throw EvalError("unexpected character '\(c)'")
             }
         }

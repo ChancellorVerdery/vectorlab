@@ -41,9 +41,12 @@ sqrt ln log exp pi e       scalar math;  rad(x) / deg(x) convert
 Conventions: z is up (statics style), trig is in degrees, `i j k π e origin`
 are reserved. The notebook re-evaluates top-to-bottom on every edit and
 autosaves to `~/Library/Application Support/VectorLab/workspace.json`.
-Unfocused lines render as math notation (û, F⃗, ⟨…⟩, ·) — click to edit the
-raw text. Arrow girth and labels rescale with camera zoom; the arrowheads
-toggle in the toolbar draws vectors as plain lines.
+While editing, press Return once to render your notation as math in place
+(\hat u → û, \vec F → F⃗, < > → ⟨ ⟩); press Return again to finish the line.
+The rendered form is real syntax — û is a distinct variable, F⃗ ≡ F, and
+· × √ π ∠ all parse. Unfocused lines always render as math; click to edit.
+Arrow girth and labels rescale with camera zoom; the arrowheads toggle in
+the toolbar draws vectors as plain lines.
 
 ## Layout
 

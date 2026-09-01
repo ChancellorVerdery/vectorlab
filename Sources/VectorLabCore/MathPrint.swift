@@ -24,6 +24,7 @@ public enum MathPrint {
         s = s.replacingOccurrences(of: "<", with: "⟨")
         s = s.replacingOccurrences(of: ">", with: "⟩")
         s = s.replacingOccurrences(of: "*", with: "·")
+        s = s.replacingOccurrences(of: "@", with: "∠")
         s = s.replacingOccurrences(of: "sqrt(", with: "√(")
         s = s.replacing(/\bpi\b/, with: "π")
         return s

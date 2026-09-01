@@ -66,7 +66,7 @@ private struct EntryRow: View {
                         .textFieldStyle(.plain)
                         .font(.system(.body, design: .monospaced))
                         .focused(focus, equals: entry.id)
-                        .onSubmit(onSubmit)
+                        .onSubmit(renderOrSubmit)
                 } else {
                     prettyText
                         .contentShape(Rectangle())
@@ -122,6 +122,20 @@ private struct EntryRow: View {
     private var showsRawText: Bool {
         focus.wrappedValue == entry.id
             || entry.text.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// First Return renders the typed notation as math in place (\hat u → û)
+    /// and keeps editing; the next Return, with nothing left to render,
+    /// commits the line and moves on.
+    private func renderOrSubmit() {
+        let trimmed = entry.text.trimmingCharacters(in: .whitespaces)
+        let isComment = trimmed.hasPrefix("#") || trimmed.hasPrefix("//")
+        let pretty = MathPrint.pretty(entry.text)
+        if !isComment, pretty != entry.text {
+            entry.text = pretty
+        } else {
+            onSubmit()
+        }
     }
 
     @ViewBuilder private var prettyText: some View {

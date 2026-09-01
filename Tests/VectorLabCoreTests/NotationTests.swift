@@ -37,6 +37,50 @@ import Testing
         expectApprox(try scalar("mag(<3, 4, 0>)(2)"), 10)
     }
 
+    /// Enter-to-render commits the pretty text as the real source, so every
+    /// pretty form must evaluate identically to what the user typed.
+    @Test func mathPrintRoundTripsThroughParser() {
+        let corpus = [
+            "a = <1, 2, 3>",
+            "F = 260 * unit(<1, 2, 2>)",
+            "T = 50 @ 30",
+            #"\vec G = 3i + 4j - 5k"#,
+            #"\hat u = unit(<3, 4, 0>)"#,
+            "m = sqrt(16) + 2 pi",
+            "d = <1, 2, 3> * <4, -5, 6>",
+            "c = cross(i, j) × k",
+            "theta = 30",
+            "point A = (1, 2, 3)",
+        ]
+        let raw = Engine.evaluate(corpus)
+        let pretty = Engine.evaluate(corpus.map(MathPrint.pretty))
+        for (r, p) in zip(raw, pretty) {
+            #expect(r.errorMessage == nil)
+            #expect(r.resultText == p.resultText)
+            #expect(r.drawable == p.drawable)
+        }
+    }
+
+    @Test func mathPrintIsIdempotent() {
+        for line in ["a = <1, 2, 3>", #"\hat u = 2 * unit(F) @ 30"#, "sqrt(2) pi"] {
+            let once = MathPrint.pretty(line)
+            #expect(MathPrint.pretty(once) == once)
+        }
+    }
+
+    @Test func combiningArrowIsCosmetic() throws {
+        // F⃗ (F + U+20D7) is the same variable as F, matching \vec F.
+        expectApprox(try scalar("F\u{20D7} = <7, 0, 0>", "F.x"), 7)
+        expectApprox(try scalar("F = <7, 0, 0>", "F\u{20D7}.x"), 7)
+    }
+
+    @Test func centerDotScalesLikeMultiply() throws {
+        expectApprox(try vector("2 · <1, 2, 3>"), Vec3(2, 4, 6))
+        expectApprox(try vector("<1, 2, 3> · 2"), Vec3(2, 4, 6))
+        expectApprox(try vector("F = 260 · unit(<3, 4, 12>)"), Vec3(60, 80, 240), tolerance: 1e-9)
+        expectApprox(try scalar("√(9)"), 3)
+    }
+
     @Test func mathPrintPretty() {
         #expect(MathPrint.pretty(#"\hat u = unit(F)"#) == "û = unit(F)")
         #expect(MathPrint.pretty(#"\hat(u) = 2"#) == "û = 2")

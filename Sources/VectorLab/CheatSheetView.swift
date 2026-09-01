@@ -55,7 +55,7 @@ struct CheatSheetView: View {
                         }
                     }
                 }
-                Text("Lines render as math notation when not being edited — click a line to edit its raw text.")
+                Text("Press Return once to render your notation as math in place (\\hat u → û); press Return again to finish the line. Unfocused lines always render as math — click one to edit.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

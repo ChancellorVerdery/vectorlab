@@ -27,6 +27,20 @@ public final class VectorSceneController {
     private var axesScalables: [Scalable] = []
     private var screenFactor: Double = 1
 
+    /// Arrow shaft+tip pairs whose geometry is rebuilt on zoom so the tip's
+    /// LENGTH shrinks with its girth (radial-only scaling makes needles) and
+    /// the shaft always meets the cone base.
+    private struct ArrowTip {
+        let cone: SCNCone
+        let coneNode: SCNNode
+        let shaft: SCNCylinder
+        let shaftNode: SCNNode
+        let length: Double
+        let baseTip: Double
+        let baseRadius: Double
+    }
+    private var arrowTips: [ArrowTip] = []
+
     public init() {
         scene.background.contents = NSColor(red: 0.075, green: 0.085, blue: 0.12, alpha: 1)
 
@@ -81,6 +95,7 @@ public final class VectorSceneController {
         // ponytail: full rebuild per edit; diff nodes only if scenes ever get huge
         contentNode.childNodes.forEach { $0.removeFromParentNode() }
         contentScalables.removeAll()
+        arrowTips.removeAll()
 
         // Seed label obstacles: axis labels, every arrow tip, every point.
         labelObstacles.removeAll()
@@ -137,6 +152,16 @@ public final class VectorSceneController {
                 let b = s.base * f
                 s.node.scale = SCNVector3(b, b, b)
             }
+        }
+        for t in arrowTips {
+            let tip = min(t.baseTip * f, 0.3 * t.length)
+            let radius = t.baseRadius * f
+            t.shaft.radius = radius
+            t.shaft.height = max(0.001, t.length - tip)
+            t.shaftNode.position.y = (t.length - tip) / 2
+            t.cone.height = tip
+            t.cone.bottomRadius = radius * 2.8
+            t.coneNode.position.y = t.length - tip / 2
         }
     }
 
@@ -248,7 +273,6 @@ public final class VectorSceneController {
         let shaftNode = SCNNode(geometry: shaft)
         shaftNode.position.y = (length - tipLength) / 2
         aligned.addChildNode(shaftNode)
-        registerScalable(shaftNode, radial: true)
 
         if showHead {
             let cone = SCNCone(topRadius: 0, bottomRadius: shaftRadius * 2.8, height: tipLength)
@@ -257,7 +281,13 @@ public final class VectorSceneController {
             let coneNode = SCNNode(geometry: cone)
             coneNode.position.y = length - tipLength / 2
             aligned.addChildNode(coneNode)
-            registerScalable(coneNode, radial: true)
+            // Whole-tip zoom scaling (length + girth together, shaft follows).
+            arrowTips.append(ArrowTip(cone: cone, coneNode: coneNode,
+                                      shaft: shaft, shaftNode: shaftNode,
+                                      length: length, baseTip: tipLength,
+                                      baseRadius: shaftRadius))
+        } else {
+            registerScalable(shaftNode, radial: true)
         }
         node.addChildNode(aligned)
 
@@ -482,7 +512,8 @@ public final class VectorSceneController {
         let coneNode = SCNNode(geometry: cone)
         coneNode.position.y = e
         aligned.addChildNode(coneNode)
-        registerScalable(coneNode, radial: true, axes: true)
+        // Uniform scale: axis tips keep their proportions as zoom changes.
+        registerScalable(coneNode, radial: false, axes: true)
 
         node.addChildNode(aligned)
         let (labelNode, _) = makeLabel(label, color: color, axes: true)

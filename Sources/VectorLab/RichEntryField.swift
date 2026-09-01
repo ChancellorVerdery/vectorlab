@@ -106,6 +106,10 @@ struct RichEntryField: View {
     private static let hiddenStyle = AttributeContainer()
         .font(.system(size: 1))
         .foregroundColor(.clear)
+    // A \vec still waiting for its name: visible but dimmed.
+    private static let pendingStyle = AttributeContainer()
+        .font(.system(.body, design: .monospaced))
+        .foregroundColor(.secondary)
 
     private static func isNameChar(_ c: Character) -> Bool {
         c.isLetter || c.isNumber || c == "_" || c.unicodeScalars.count > 1
@@ -144,8 +148,15 @@ struct RichEntryField: View {
                     var token = "\\" + cmd
                     while j < chars.count, chars[j] == " " { token.append(" "); j += 1 }
                     closeSpan()
-                    append(token, hiddenStyle, advance: hiddenAdvance)
-                    spanStart = x
+                    if j < chars.count, isNameChar(chars[j]) {
+                        // Name present: hide the command, arrow the name.
+                        append(token, hiddenStyle, advance: hiddenAdvance)
+                        spanStart = x
+                    } else {
+                        // Still typing: keep \vec visible (dimmed) until the
+                        // name it decorates exists.
+                        append(token, pendingStyle, advance: baseAdvance)
+                    }
                     i = j
                     continue
                 }

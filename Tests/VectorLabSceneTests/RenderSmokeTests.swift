@@ -33,7 +33,7 @@ import VectorLabCore
         let controller = VectorSceneController()
         let items = [
             ColoredDrawable(
-                drawable: Drawable(shape: .arrow(tail: .zero, vector: Vec3(3, 2, 4)), label: "F"),
+                drawable: Drawable(shape: .arrow(tail: .zero, vector: Vec3(3, 2, 4)), label: "r_AB"),
                 colorIndex: 0),
             ColoredDrawable(
                 drawable: Drawable(shape: .point(Vec3(1, 1, 1)), label: "A"),

@@ -291,9 +291,38 @@ public final class VectorSceneController {
     /// points, axis labels, and labels already placed this rebuild.
     private var labelObstacles: [(pos: Vec3, radius: Double)] = []
 
+    /// _AB in a name typesets as a true subscript (smaller, lowered, no
+    /// underscore) — the editable text can't do this (Unicode has no capital
+    /// subscript letters), but attributed SCNText can.
+    private func attributedLabel(_ string: String) -> NSAttributedString {
+        let base = NSFont.monospacedSystemFont(ofSize: 1, weight: .semibold)
+        let small = NSFont.monospacedSystemFont(ofSize: 0.62, weight: .semibold)
+        let result = NSMutableAttributedString()
+        var idx = string.startIndex
+        while idx < string.endIndex {
+            if string[idx] == "_" {
+                var j = string.index(after: idx)
+                var run = ""
+                while j < string.endIndex, string[j].isLetter || string[j].isNumber {
+                    run.append(string[j])
+                    j = string.index(after: j)
+                }
+                if !run.isEmpty {
+                    result.append(NSAttributedString(
+                        string: run,
+                        attributes: [.font: small, .baselineOffset: -0.22]))
+                    idx = j
+                    continue
+                }
+            }
+            result.append(NSAttributedString(string: String(string[idx]), attributes: [.font: base]))
+            idx = string.index(after: idx)
+        }
+        return result
+    }
+
     private func makeLabel(_ string: String, color: NSColor, axes: Bool = false) -> (node: SCNNode, halfWidth: Double) {
-        let text = SCNText(string: string, extrusionDepth: 0)
-        text.font = .monospacedSystemFont(ofSize: 1, weight: .semibold)
+        let text = SCNText(string: attributedLabel(string), extrusionDepth: 0)
         text.flatness = 0.05
         let m = material(color, constant: true)
         m.readsFromDepthBuffer = false   // labels draw on top, never inside geometry

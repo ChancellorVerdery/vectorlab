@@ -158,20 +158,22 @@ private struct EntryRow: View {
         outcome?.drawable != nil || outcome?.arc != nil
     }
 
-    /// Typing a space at the end of the line renders completed notation
-    /// immediately (\theta → θ, \hat(a) → â) — a space means the token
-    /// before it is finished. Mid-line edits are left alone so the caret
-    /// doesn't jump.
+    /// Space completes a \command like a LaTeX editor: typing a space right
+    /// after \theta or \hat(a) renders it and swallows the space. Spaces
+    /// anywhere else are ordinary typing; operator conversions (* → ·)
+    /// wait for Return so spacing is never eaten mid-expression.
     private func renderOnTrailingSpace(old: String, new: String) {
         guard focus.wrappedValue == entry.id,
               new.count == old.count + 1,
               new.hasSuffix(" ")
         else { return }
-        let trimmed = new.trimmingCharacters(in: .whitespaces)
+        let body = String(new.dropLast())
+        let trimmed = body.trimmingCharacters(in: .whitespaces)
         guard !trimmed.hasPrefix("#"), !trimmed.hasPrefix("//") else { return }
-        let pretty = MathPrint.pretty(new)
-        if pretty != new {
-            entry.text = pretty
+        guard body.contains(try! Regex(#"\\[a-zA-Z]+(\s*[({]?[\p{L}\p{N}_]*[)}]?)?$"#)) else { return }
+        let pretty = MathPrint.pretty(body)
+        if pretty != body {
+            entry.text = pretty   // rendered — the space was the trigger, not content
         }
     }
 

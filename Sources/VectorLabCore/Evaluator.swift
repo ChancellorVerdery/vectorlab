@@ -66,6 +66,10 @@ struct Evaluator {
             let comps = try parts.map { try eval($0).asScalar("vector component") }
             return .vector(Vec3(comps[0], comps[1], comps.count == 3 ? comps[2] : 0), anchor: nil)
 
+        case .pointLiteral(let parts):
+            let comps = try parts.map { try eval($0).asScalar("point coordinate") }
+            return .point(Vec3(comps[0], comps[1], comps.count == 3 ? comps[2] : 0))
+
         case .polar(let magE, let angE):
             let m = try eval(magE).asScalar("magnitude before ∠")
             let a = try eval(angE).asScalar("angle after ∠") * .pi / 180
@@ -122,7 +126,9 @@ struct Evaluator {
             if isVec { throw EvalError("\\vec \(name) must be a vector, but got a number") }
         case .point:
             if isHat { throw EvalError("\(name) must be a unit vector, not a point") }
-            if isVec, !isPoint { throw EvalError("\\vec \(name) must be a vector, but got a point") }
+            if isVec, !isPoint {
+                throw EvalError("\\vec \(name) must be a vector — parentheses (x, y, z) make a point; use ⟨x, y, z⟩ for a vector")
+            }
         }
     }
 

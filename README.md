@@ -14,9 +14,9 @@ inline; vectors and points draw in the scene.
 ## Notation
 
 ```
-\vec a = <1, 2, 3>         vector — the \vec mark (or typed arrow a⃗) is required
+\vec a = <1, 2, 3>         vector — the \vec mark (or typed arrow a⃗) is required (also [1,2,3])
 \vec F = cos(30)i + sin(30)j   component form; calls multiply into i j k implicitly
-point A = (0, 0, 4)        point, drawn as a dot
+A = (0, 0, 4)              parentheses make a point ('point A = …' also works)
 r_AB                       B − A once points A and B exist (drawn from A)
 \hat u = unit(F)           defines û, distinct from u — must be a true unit vector
 \vec T = 50∠30             2D polar: magnitude ∠ angle in degrees (also 50 @ 30)

@@ -4,7 +4,8 @@ indirect enum Expr: Equatable {
     case number(Double)
     case ident(String)
     case call(String, [Expr])
-    case vecLiteral([Expr])      // 2 or 3 components; 2 means z = 0
+    case vecLiteral([Expr])      // ⟨…⟩ or […]; 2 or 3 components, 2 means z = 0
+    case pointLiteral([Expr])    // (x, y[, z]) — parens are coordinates, a point
     case polar(Expr, Expr)       // magnitude ∠ angle(degrees), in the XY plane
     case magnitude(Expr)         // |v|
     case member(Expr, String)    // v.x  v.y  v.z
@@ -272,8 +273,8 @@ struct Parser {
             }
             try expect(.rparen, "')'")
             if parts.count == 1 { return parts[0] }
-            guard parts.count <= 3 else { throw EvalError("vectors have at most 3 components") }
-            return .vecLiteral(parts)
+            guard parts.count <= 3 else { throw EvalError("points have at most 3 coordinates") }
+            return .pointLiteral(parts)
 
         case .langle, .lbracket:
             let closing: Token = (t == .langle) ? .rangle : .rbracket

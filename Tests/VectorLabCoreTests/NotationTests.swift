@@ -130,9 +130,21 @@ import Testing
         expectApprox(try vector("b = ⟨4, 5, 6⟩", "b"), Vec3(4, 5, 6))
     }
 
-    @Test func parenAndBracketVectors() throws {
-        expectApprox(try vector("a = (1, 2, 3)", "a"), Vec3(1, 2, 3))
+    @Test func parenTupleIsAPointBracketsAreVector() throws {
+        let v = try lastValue("A = (1, 2, 3)")
+        guard case .point(let p) = v else {
+            Issue.record("(…) should make a point, got \(v)")
+            return
+        }
+        expectApprox(p, Vec3(1, 2, 3))
         expectApprox(try vector("b = [1, 2, 3]", "b"), Vec3(1, 2, 3))
+
+        // From user feedback: a plain-named paren tuple is a point — legal
+        // under strict notation with no \vec mark.
+        let outcomes = Engine.evaluate(["θ = 30", "M = (cos(θ), sin(θ))"])
+        #expect(outcomes.allSatisfy { $0.errorMessage == nil })
+        // And parens can never satisfy a \vec mark.
+        #expect(Engine.evaluate([#"\vec a = (1, 2, 3)"#])[0].errorMessage != nil)
     }
 
     @Test func twoDVectorsGetZeroZ() throws {

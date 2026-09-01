@@ -75,8 +75,6 @@ private struct EntryRow: View {
     let onMove: (Int) -> Void
     let onDragStart: () -> Void
 
-    @State private var hovering = false
-
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             // Dragging works ONLY from this handle — clicks anywhere else
@@ -101,21 +99,19 @@ private struct EntryRow: View {
             .accessibilityLabel("Change color")
             .opacity(isDrawable ? 1 : 0.25)
 
+            // ponytail: the row is ALWAYS a live TextField — no pretty/raw
+            // view swapping. Rendered math lives in the text itself (space
+            // and Return rewrite \theta → θ), so editing can never be
+            // blocked by focus/overlay tricks again.
             VStack(alignment: .leading, spacing: 1) {
-                if showsRawText {
-                    TextField("type a vector, point, or expression…", text: $entry.text)
-                        .textFieldStyle(.plain)
-                        .font(.system(.body, design: .monospaced))
-                        .focused(focus, equals: entry.id)
-                        .onSubmit(renderOrSubmit)
-                } else {
-                    prettyText
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .onTapGesture(perform: focusThisRow)
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityHint("Click to edit")
-                }
+                TextField("type a vector, point, or expression…", text: $entry.text)
+                    .textFieldStyle(.plain)
+                    .font(.system(.body, design: .monospaced))
+                    .focused(focus, equals: entry.id)
+                    .onSubmit(renderOrSubmit)
+                    .onChange(of: entry.text) { old, new in
+                        renderOnTrailingSpace(old: old, new: new)
+                    }
 
                 if let outcome {
                     if let message = outcome.errorMessage {
@@ -147,11 +143,9 @@ private struct EntryRow: View {
             Button("Delete line", systemImage: "xmark.circle.fill", action: onDelete)
                 .buttonStyle(.borderless)
                 .labelStyle(.iconOnly)
-                .foregroundStyle(.quaternary)
-                .opacity(hovering ? 1 : 0)
+                .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 2)
-        .onHover { hovering = $0 }
         .contextMenu {
             Button("Move up", systemImage: "arrow.up") { onMove(-1) }
             Button("Move down", systemImage: "arrow.down") { onMove(1) }
@@ -164,21 +158,25 @@ private struct EntryRow: View {
         outcome?.drawable != nil || outcome?.arc != nil
     }
 
-    private var showsRawText: Bool {
-        focus.wrappedValue == entry.id
-            || entry.text.trimmingCharacters(in: .whitespaces).isEmpty
+    /// Typing a space at the end of the line renders completed notation
+    /// immediately (\theta → θ, \hat(a) → â) — a space means the token
+    /// before it is finished. Mid-line edits are left alone so the caret
+    /// doesn't jump.
+    private func renderOnTrailingSpace(old: String, new: String) {
+        guard focus.wrappedValue == entry.id,
+              new.count == old.count + 1,
+              new.hasSuffix(" ")
+        else { return }
+        let trimmed = new.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.hasPrefix("#"), !trimmed.hasPrefix("//") else { return }
+        let pretty = MathPrint.pretty(new)
+        if pretty != new {
+            entry.text = pretty
+        }
     }
 
-    private func focusThisRow() {
-        let id = entry.id
-        focus.wrappedValue = id
-        // Field appears in this same update; re-assert focus once it exists.
-        DispatchQueue.main.async { focus.wrappedValue = id }
-    }
-
-    /// First Return renders the typed notation as math in place (\hat u → û)
-    /// and keeps editing; the next Return, with nothing left to render,
-    /// commits the line and moves on.
+    /// First Return renders any remaining notation in place; the next
+    /// Return, with nothing left to render, commits the line and moves on.
     private func renderOrSubmit() {
         let trimmed = entry.text.trimmingCharacters(in: .whitespaces)
         let isComment = trimmed.hasPrefix("#") || trimmed.hasPrefix("//")
@@ -191,18 +189,6 @@ private struct EntryRow: View {
             DispatchQueue.main.async { focus.wrappedValue = id }
         } else {
             onSubmit()
-        }
-    }
-
-    @ViewBuilder private var prettyText: some View {
-        let trimmed = entry.text.trimmingCharacters(in: .whitespaces)
-        if trimmed.hasPrefix("#") || trimmed.hasPrefix("//") {
-            Text(entry.text)
-                .font(.body.weight(.medium))
-                .foregroundStyle(.secondary)
-        } else {
-            Text(MathPrint.pretty(entry.text))
-                .font(.system(.body, design: .serif))
         }
     }
 }

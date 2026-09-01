@@ -43,10 +43,10 @@ are reserved. Strict notation is enforced as a teaching aid: a definition
 holding a vector needs the `\vec`/arrow mark, and a hatted name (û) must
 have magnitude 1 — the error messages show the correct form. The notebook re-evaluates top-to-bottom on every edit and
 autosaves to `~/Library/Application Support/VectorLab/workspace.json`.
-While editing, press Return once to render your notation as math in place
-(\hat u → û, \vec F → F⃗, < > → ⟨ ⟩); press Return again to finish the line.
-The rendered form is real syntax — û is a distinct variable, F⃗ ≡ F, and
-· × √ π ∠ all parse. Unfocused lines always render as math; click to edit.
+Typing a space (or Return) renders finished notation in place — \hat u → û,
+\vec F → F⃗, \theta → θ, < > → ⟨ ⟩ — and Return again commits the line.
+The rendered form is real syntax: û is a distinct variable, F⃗ ≡ F, Greek
+letters are plain identifiers, and · × √ π ∠ all parse.
 Arrow girth and labels rescale with camera zoom; the arrowheads toggle in
 the toolbar draws vectors as plain lines.
 

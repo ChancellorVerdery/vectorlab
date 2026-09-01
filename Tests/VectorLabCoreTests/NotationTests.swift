@@ -101,6 +101,20 @@ import Testing
         expectApprox(try scalar("√(9)"), 3)
     }
 
+    @Test func greekLetterCommands() throws {
+        expectApprox(try scalar(#"\theta = 30"#, "θ"), 30)
+        expectApprox(try scalar(#"\theta = 30"#, #"sin(\theta)"#), 0.5, tolerance: 1e-12)
+        expectApprox(try scalar(#"\Omega = 5"#, "Ω"), 5)
+        expectApprox(try scalar(#"2\pi"#), 2 * Double.pi, tolerance: 1e-12)
+        expectApprox(try vector("λ = 4", #"\vec F = \lambda * i"#, "F"), Vec3(4, 0, 0))
+    }
+
+    @Test func mathPrintGreek() {
+        #expect(MathPrint.pretty(#"\theta = 30"#) == "θ = 30")
+        #expect(MathPrint.pretty(#"\alpha + \beta"#) == "α + β")
+        #expect(MathPrint.pretty(#"\foo x"#) == #"\foo x"#)   // unknown commands untouched
+    }
+
     @Test func mathPrintPretty() {
         #expect(MathPrint.pretty(#"\hat u = unit(F)"#) == "û = unit(F)")
         #expect(MathPrint.pretty(#"\hat(u) = 2"#) == "û = 2")

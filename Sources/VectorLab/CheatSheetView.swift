@@ -10,6 +10,7 @@ struct CheatSheetView: View {
             ("\\hat u = unit(F)", "û — must be a true unit vector (|û| = 1 enforced)"),
             ("\\vec T = 50∠30", "2D: magnitude ∠ angle°  (or 50 @ 30)"),
             ("m = 12.5", "scalars use plain names"),
+            ("\\theta  \\alpha  \\Omega …", "Greek letters (θ, α, Ω) — real variable names"),
             ("# heading", "comment line"),
         ]),
         ("Operate", [
@@ -55,7 +56,7 @@ struct CheatSheetView: View {
                         }
                     }
                 }
-                Text("Press Return once to render your notation as math in place (\\hat u → û); press Return again to finish the line. Unfocused lines always render as math — click one to edit.")
+                Text("Hitting space or Return renders finished notation in place (\\hat u → û, \\theta → θ); Return again commits the line and starts the next one.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

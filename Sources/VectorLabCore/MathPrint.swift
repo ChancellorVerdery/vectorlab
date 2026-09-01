@@ -26,6 +26,10 @@ public enum MathPrint {
         s = s.replacingOccurrences(of: "*", with: "·")
         s = s.replacingOccurrences(of: "@", with: "∠")
         s = s.replacingOccurrences(of: "sqrt(", with: "√(")
+        // Greek commands; unknown \commands are left untouched.
+        s = s.replacing(/\\([a-zA-Z]+)/) { m in
+            Lexer.greek[String(m.output.1)] ?? String(m.output.0)
+        }
         s = s.replacing(/\bpi\b/, with: "π")
         return s
     }

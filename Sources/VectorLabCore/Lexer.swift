@@ -11,6 +11,19 @@ enum Token: Equatable {
 }
 
 enum Lexer {
+    /// LaTeX Greek commands → the letter they produce. Shared with MathPrint.
+    static let greek: [String: String] = [
+        "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ",
+        "epsilon": "ε", "varepsilon": "ε", "zeta": "ζ", "eta": "η",
+        "theta": "θ", "vartheta": "θ", "iota": "ι", "kappa": "κ",
+        "lambda": "λ", "mu": "μ", "nu": "ν", "xi": "ξ", "omicron": "ο",
+        "pi": "π", "rho": "ρ", "sigma": "σ", "tau": "τ", "upsilon": "υ",
+        "phi": "φ", "varphi": "φ", "chi": "χ", "psi": "ψ", "omega": "ω",
+        "Gamma": "Γ", "Delta": "Δ", "Theta": "Θ", "Lambda": "Λ",
+        "Xi": "Ξ", "Pi": "Π", "Sigma": "Σ", "Upsilon": "Υ",
+        "Phi": "Φ", "Psi": "Ψ", "Omega": "Ω",
+    ]
+
     /// ASCII digits only — Unicode numerals like ² or ½ must error, not lex.
     private static func isDigit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
 
@@ -81,8 +94,12 @@ enum Lexer {
                 case "times": tokens.append(.crossOp)
                 case "langle": tokens.append(.langle)
                 case "rangle": tokens.append(.rangle)
-                case "pi": tokens.append(.ident("pi"))
-                default: throw EvalError("unknown command \\\(cmd)")
+                default:
+                    guard let letter = Self.greek[cmd] else {
+                        throw EvalError("unknown command \\\(cmd)")
+                    }
+                    // π is the constant; other Greek letters are plain names.
+                    tokens.append(.ident(letter == "π" ? "pi" : letter))
                 }
                 continue
             }

@@ -1,39 +1,67 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import VectorLabCore
 import VectorLabScene
 
 struct NotebookView: View {
     @Bindable var model: AppModel
     @FocusState private var focusedEntry: UUID?
+    @State private var draggingID: UUID?
 
     var body: some View {
-        List {
-            ForEach($model.entries) { $entry in
-                EntryRow(
-                    entry: $entry,
-                    outcome: model.outcome(for: entry.id),
-                    focus: $focusedEntry,
-                    onSubmit: {
-                        let newID = model.addEntry(after: entry.id)
-                        focusedEntry = newID
-                    },
-                    onCycleColor: { model.cycleColor(entry.id) },
-                    onDelete: { model.remove(entry.id) },
-                    onMove: { delta in model.move(entry.id, by: delta) }
-                )
-            }
-            // ponytail: no .onMove — row-wide drag reordering swallowed clicks
-            // meant for the text field; reorder lives in the context menu
+        // ponytail: plain ScrollView, not List — List's row selection/drag
+        // machinery swallowed clicks meant for the text fields
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                ForEach($model.entries) { $entry in
+                    EntryRow(
+                        entry: $entry,
+                        outcome: model.outcome(for: entry.id),
+                        focus: $focusedEntry,
+                        onSubmit: { focusedEntry = model.addEntry(after: entry.id) },
+                        onCycleColor: { model.cycleColor(entry.id) },
+                        onDelete: { model.remove(entry.id) },
+                        onMove: { delta in model.move(entry.id, by: delta) },
+                        onDragStart: { draggingID = entry.id }
+                    )
+                    .onDrop(of: [.text], delegate: EntryDropDelegate(
+                        itemID: entry.id, entries: $model.entries, draggingID: $draggingID))
+                }
 
-            Button("New line", systemImage: "plus") {
-                focusedEntry = model.addEntry()
+                Button("New line", systemImage: "plus") {
+                    focusedEntry = model.addEntry()
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .padding(.top, 6)
+                .padding(.leading, 30)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .padding(.top, 2)
+            .padding(10)
         }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
+    }
+}
+
+/// Live-reorders entries as the dragged row passes over others.
+private struct EntryDropDelegate: DropDelegate {
+    let itemID: UUID
+    @Binding var entries: [Entry]
+    @Binding var draggingID: UUID?
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging = draggingID, dragging != itemID,
+              let from = entries.firstIndex(where: { $0.id == dragging }),
+              let to = entries.firstIndex(where: { $0.id == itemID })
+        else { return }
+        withAnimation {
+            entries.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingID = nil
+        return true
     }
 }
 
@@ -45,11 +73,25 @@ private struct EntryRow: View {
     let onCycleColor: () -> Void
     let onDelete: () -> Void
     let onMove: (Int) -> Void
+    let onDragStart: () -> Void
 
     @State private var hovering = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // Dragging works ONLY from this handle — clicks anywhere else
+            // go straight to the text field.
+            Image(systemName: "line.3.horizontal")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(width: 14)
+                .contentShape(Rectangle())
+                .onDrag {
+                    onDragStart()
+                    return NSItemProvider(object: entry.id.uuidString as NSString)
+                }
+                .accessibilityLabel("Drag to reorder")
+
             Button(action: onCycleColor) {
                 Circle()
                     .fill(Color(nsColor: VectorLabScene.Palette.color(entry.colorIndex)))
@@ -60,20 +102,19 @@ private struct EntryRow: View {
             .opacity(isDrawable ? 1 : 0.25)
 
             VStack(alignment: .leading, spacing: 1) {
-                // The TextField is always present (invisible under the rendered
-                // math) so a click anywhere in the row focuses it natively —
-                // reliable focus, caret at the click point, Tab still works.
-                ZStack(alignment: .leading) {
+                if showsRawText {
                     TextField("type a vector, point, or expression…", text: $entry.text)
                         .textFieldStyle(.plain)
                         .font(.system(.body, design: .monospaced))
                         .focused(focus, equals: entry.id)
                         .onSubmit(renderOrSubmit)
-                        .opacity(showsRawText ? 1 : 0)
-                    if !showsRawText {
-                        prettyText
-                            .allowsHitTesting(false)
-                    }
+                } else {
+                    prettyText
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: focusThisRow)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Click to edit")
                 }
 
                 if let outcome {
@@ -91,8 +132,7 @@ private struct EntryRow: View {
                     }
                 }
             }
-
-            Spacer(minLength: 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if isDrawable {
                 Button(entry.visible ? "Hide in scene" : "Show in scene",
@@ -127,6 +167,13 @@ private struct EntryRow: View {
     private var showsRawText: Bool {
         focus.wrappedValue == entry.id
             || entry.text.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func focusThisRow() {
+        let id = entry.id
+        focus.wrappedValue = id
+        // Field appears in this same update; re-assert focus once it exists.
+        DispatchQueue.main.async { focus.wrappedValue = id }
     }
 
     /// First Return renders the typed notation as math in place (\hat u → û)

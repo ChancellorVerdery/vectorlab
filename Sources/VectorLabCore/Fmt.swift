@@ -20,7 +20,9 @@ public enum Fmt {
     }
 
     public static func vector(_ v: Vec3) -> String {
-        "⟨\(num(v.x)), \(num(v.y)), \(num(v.z))⟩"
+        // Plain <>: the ⟨⟩ glyphs look like parens in monospace, and parens
+        // mean points — results must model the notation users should write.
+        "<\(num(v.x)), \(num(v.y)), \(num(v.z))>"
     }
 
     public static func value(_ v: Value) -> String {

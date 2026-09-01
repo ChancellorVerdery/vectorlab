@@ -110,7 +110,7 @@ private struct EntryRow: View {
                     .focused(focus, equals: entry.id)
                     .onSubmit(renderOrSubmit)
                     .onChange(of: entry.text) { old, new in
-                        renderOnTrailingSpace(old: old, new: new)
+                        renderOnType(old: old, new: new)
                     }
 
                 if let outcome {
@@ -158,22 +158,32 @@ private struct EntryRow: View {
         outcome?.drawable != nil || outcome?.arc != nil
     }
 
-    /// Space completes a \command like a LaTeX editor: typing a space right
-    /// after \theta or \hat(a) renders it and swallows the space. Spaces
-    /// anywhere else are ordinary typing; operator conversions (* → ·)
-    /// wait for Return so spacing is never eaten mid-expression.
-    private func renderOnTrailingSpace(old: String, new: String) {
+    /// Live rendering while typing at the end of the line:
+    /// - space right after a \command (\theta, \hat(a)) renders it and
+    ///   swallows the space, like a LaTeX editor;
+    /// - _1 and ^2 become ₁ and ² the moment the digit lands.
+    /// Mid-line edits are left alone so the caret never jumps; operator
+    /// conversions (* → ·) wait for Return.
+    private func renderOnType(old: String, new: String) {
         guard focus.wrappedValue == entry.id,
               new.count == old.count + 1,
-              new.hasSuffix(" ")
+              new.hasPrefix(old)          // insertion at the end only
         else { return }
-        let body = String(new.dropLast())
-        let trimmed = body.trimmingCharacters(in: .whitespaces)
+        let trimmed = new.trimmingCharacters(in: .whitespaces)
         guard !trimmed.hasPrefix("#"), !trimmed.hasPrefix("//") else { return }
-        guard body.contains(try! Regex(#"\\[a-zA-Z]+(\s*[({]?[\p{L}\p{N}_]*[)}]?)?$"#)) else { return }
-        let pretty = MathPrint.pretty(body)
-        if pretty != body {
-            entry.text = pretty   // rendered — the space was the trigger, not content
+
+        if new.hasSuffix(" ") {
+            let body = String(new.dropLast())
+            guard body.contains(try! Regex(#"\\[a-zA-Z]+(\s*[({]?[\p{L}\p{N}_]*[)}]?)?$"#)) else { return }
+            let pretty = MathPrint.pretty(body)
+            if pretty != body {
+                entry.text = pretty   // rendered — the space was the trigger, not content
+            }
+        } else {
+            let scripted = MathPrint.applyScripts(new)
+            if scripted != new {
+                entry.text = scripted
+            }
         }
     }
 

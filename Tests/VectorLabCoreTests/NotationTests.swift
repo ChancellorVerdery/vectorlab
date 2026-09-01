@@ -71,6 +71,8 @@ import Testing
             #"\vec c = cross(i, j) × k"#,
             "theta = 30",
             "point A = (1, 2, 3)",
+            #"\vec F_1 = <2, 0, 0>"#,
+            "E = 2^3",
         ]
         let raw = Engine.evaluate(corpus)
         let pretty = Engine.evaluate(corpus.map(MathPrint.pretty))
@@ -119,7 +121,7 @@ import Testing
         #expect(MathPrint.pretty(#"\hat u = unit(F)"#) == "û = unit(F)")
         #expect(MathPrint.pretty(#"\hat(u) = 2"#) == "û = 2")
         #expect(MathPrint.pretty(#"\vec F = 3i + 4j"#).hasPrefix("F\u{20D7}"))
-        #expect(MathPrint.pretty("a = <1, 2, 3>") == "a = ⟨1, 2, 3⟩")
+        #expect(MathPrint.pretty("a = <1, 2, 3>") == "a = <1, 2, 3>")   // <> kept: parens mean points
         #expect(MathPrint.pretty("a * b") == "a · b")
         #expect(MathPrint.pretty("2 pi") == "2 π")
         #expect(MathPrint.pretty("point A = (0, 0, 0)") == "point A = (0, 0, 0)")
@@ -255,8 +257,23 @@ import Testing
 
     @Test func malformedNumbersError() {
         // Review finding: these used to silently lex as 0 with status ok.
-        let outcomes = Engine.evaluate(["1.2.3", "a = 1..5", "3²", "x = ½"])
+        let outcomes = Engine.evaluate(["1.2.3", "a = 1..5", "x = ½"])
         #expect(outcomes.allSatisfy { $0.errorMessage != nil })
+    }
+
+    @Test func subscriptSuperscriptForms() throws {
+        expectApprox(try scalar("m_1 = 5", "m₁"), 5)         // same variable
+        expectApprox(try scalar("m₂ = 7", "m_2"), 7)
+        expectApprox(try scalar("3²"), 9)                    // superscript run is a power
+        expectApprox(try scalar("2⁻¹"), 0.5)
+        expectApprox(try scalar("10³"), 1000)
+        #expect(MathPrint.applyScripts("F_1 = 5") == "F₁ = 5")
+        #expect(MathPrint.applyScripts("x^2 + y^-3") == "x² + y⁻³")
+        #expect(MathPrint.applyScripts("2^3^2") == "2³^2")   // no run merging
+        #expect(MathPrint.applyScripts("r_AB") == "r_AB")    // no Unicode letter subscripts
+        // Subscripted vector names survive the arrow decoration.
+        let outcomes = Engine.evaluate([#"\vec F_1 = <2, 0, 0>"#, "F_1 * i"])
+        #expect(outcomes.allSatisfy { $0.errorMessage == nil })
     }
 
     @Test func missingCommaOrOperatorErrors() {

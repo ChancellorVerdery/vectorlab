@@ -11,6 +11,7 @@ struct CheatSheetView: View {
             ("\\vec T = 50∠30", "2D: magnitude ∠ angle°  (or 50 @ 30)"),
             ("m = 12.5", "scalars use plain names"),
             ("\\theta  \\alpha  \\Omega …", "Greek letters (θ, α, Ω) — real variable names"),
+            ("F_1,  x^2  →  F₁,  x²", "digit sub/superscripts render as you type"),
             ("# heading", "comment line"),
         ]),
         ("Operate", [

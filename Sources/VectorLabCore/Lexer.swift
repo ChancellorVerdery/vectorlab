@@ -27,13 +27,16 @@ enum Lexer {
     /// ASCII digits only — Unicode numerals like ² or ½ must error, not lex.
     private static func isDigit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
 
-    /// Identifier characters: ASCII letters/digits/underscore, plus any
-    /// letter-initial grapheme so û, θ, and F⃗ (letter + combining mark) work.
+    /// Identifier characters: ASCII letters/digits/underscore, subscript
+    /// digits (F₁ ≡ F_1), plus any letter-initial grapheme so û, θ, and F⃗
+    /// (letter + combining mark) work — including digits carrying marks (1⃗).
     private static func isIdentChar(_ c: Character) -> Bool {
         if c == "_" { return true }
         if c.isASCII { return c.isLetter || c.isNumber }
+        if MathPrint.subscriptToPlain[c] != nil { return true }
         guard let first = c.unicodeScalars.first else { return false }
-        return first.properties.isAlphabetic
+        if first.properties.isAlphabetic { return true }
+        return c.unicodeScalars.count > 1 && (("0"..."9").contains(String(first)) || first == "_")
     }
 
     static func tokenize(_ input: String) throws -> [Token] {
@@ -61,13 +64,26 @@ enum Lexer {
             while i < chars.count, isIdentChar(chars[i]) {
                 s.append(chars[i]); i += 1
             }
+            // Subscript digits are the same name as their _n spelling: F₁ ≡ F_1.
+            var normalized = ""
+            var inSubscript = false
+            for ch in s {
+                if let plain = MathPrint.subscriptToPlain[ch] {
+                    if !inSubscript { normalized.append("_") }
+                    normalized.append(plain)
+                    inSubscript = true
+                } else {
+                    normalized.append(ch)
+                    inSubscript = false
+                }
+            }
             // The arrow in F⃗ means the same as \vec F — strip it from the
             // name, but report it so definitions count as vector-marked.
             // û typed directly and u + combining hat must be the same name.
             // Scalar-level check: grapheme-based contains() can't find a
             // lone combining mark inside a cluster like P⃗.
-            let hadArrow = s.unicodeScalars.contains { $0.value == 0x20D7 }
-            var cleaned = s.replacingOccurrences(of: "\u{20D7}", with: "")
+            let hadArrow = normalized.unicodeScalars.contains { $0.value == 0x20D7 }
+            var cleaned = normalized.replacingOccurrences(of: "\u{20D7}", with: "")
                 .precomposedStringWithCanonicalMapping
             if cleaned == "π" { cleaned = "pi" }
             return (cleaned, hadArrow)
@@ -78,10 +94,23 @@ enum Lexer {
             if c.isWhitespace { i += 1; continue }
             if isDigit(c) { try scanNumber(); continue }
             if c == ".", i + 1 < chars.count, isDigit(chars[i + 1]) { try scanNumber(); continue }
-            if isIdentChar(c) {
+            if isIdentChar(c), MathPrint.subscriptToPlain[c] == nil {
                 let (word, hadArrow) = scanIdent()
                 if hadArrow { tokens.append(.vecKeyword) }
                 tokens.append(word == "vec" ? .vecKeyword : .ident(word))
+                continue
+            }
+            // Superscript run is a power: 2³ ≡ 2^3, 2⁻¹ ≡ 2^-1.
+            if MathPrint.superscriptToPlain[c] != nil || c == "⁻" {
+                tokens.append(.caret)
+                if c == "⁻" { tokens.append(.minus); i += 1 }
+                var digits = ""
+                while i < chars.count, let d = MathPrint.superscriptToPlain[chars[i]] {
+                    digits.append(d)
+                    i += 1
+                }
+                guard let value = Double(digits) else { throw EvalError("superscript needs digits") }
+                tokens.append(.number(value))
                 continue
             }
             if c == "\\" {

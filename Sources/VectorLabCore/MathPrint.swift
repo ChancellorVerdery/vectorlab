@@ -11,11 +11,10 @@ public enum MathPrint {
         s = s.replacing(/\\hat\s+([\p{L}_][\p{L}\p{N}_]*)/) { m in
             String(m.output.1 + "\u{0302}").precomposedStringWithCanonicalMapping
         }
+        // \vec stays in the text: the notebook renders it as a full-width
+        // arrow OVER the name (a combining char could only mark one letter).
         s = s.replacing(/\\(?:vec|vector|overrightarrow)\s*[({]\s*([\p{L}_][\p{L}\p{N}_]*)\s*[)}]/) { m in
-            String(m.output.1 + "\u{20D7}")
-        }
-        s = s.replacing(/\\(?:vec|vector|overrightarrow)\s+([\p{L}_][\p{L}\p{N}_]*)/) { m in
-            String(m.output.1 + "\u{20D7}")
+            #"\vec "# + String(m.output.1)
         }
         s = s.replacingOccurrences(of: "\\cdot", with: "·")
         s = s.replacingOccurrences(of: "\\times", with: "×")

@@ -120,7 +120,8 @@ import Testing
     @Test func mathPrintPretty() {
         #expect(MathPrint.pretty(#"\hat u = unit(F)"#) == "û = unit(F)")
         #expect(MathPrint.pretty(#"\hat(u) = 2"#) == "û = 2")
-        #expect(MathPrint.pretty(#"\vec F = 3i + 4j"#).hasPrefix("F\u{20D7}"))
+        #expect(MathPrint.pretty(#"\vec F = 3i + 4j"#) == #"\vec F = 3i + 4j"#)   // kept for arrow overlay
+        #expect(MathPrint.pretty(#"\vec(F) = 2i"#) == #"\vec F = 2i"#)
         #expect(MathPrint.pretty("a = <1, 2, 3>") == "a = <1, 2, 3>")   // <> kept: parens mean points
         #expect(MathPrint.pretty("a * b") == "a · b")
         #expect(MathPrint.pretty("2 pi") == "2 π")

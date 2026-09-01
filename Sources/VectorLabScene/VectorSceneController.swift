@@ -263,7 +263,8 @@ public final class VectorSceneController {
 
         if let label {
             addLabel(label, color: color, to: node, parentOrigin: tail,
-                     desired: tail + vec + dir * (labelScale * 1.6), escape: dir)
+                     desired: tail + vec + dir * (labelScale * 1.6), escape: dir,
+                     vectorMark: true)
         }
         return node
     }
@@ -321,7 +322,8 @@ public final class VectorSceneController {
         return result
     }
 
-    private func makeLabel(_ string: String, color: NSColor, axes: Bool = false) -> (node: SCNNode, halfWidth: Double) {
+    private func makeLabel(_ string: String, color: NSColor, axes: Bool = false,
+                           vectorMark: Bool = false) -> (node: SCNNode, halfWidth: Double) {
         let text = SCNText(string: attributedLabel(string), extrusionDepth: 0)
         text.flatness = 0.05
         let m = material(color, constant: true)
@@ -338,14 +340,38 @@ public final class VectorSceneController {
         let (minB, maxB) = text.boundingBox
         node.pivot = SCNMatrix4MakeTranslation((minB.x + maxB.x) / 2, (minB.y + maxB.y) / 2, 0)
         node.constraints = [SCNBillboardConstraint()]
+
+        if vectorMark {
+            // Full-width arrow over the name — proper vector notation.
+            let width = CGFloat(maxB.x - minB.x)
+            let y = CGFloat(maxB.y) + 0.16
+            let barMaterial = material(color, constant: true)
+            barMaterial.readsFromDepthBuffer = false
+
+            let bar = SCNBox(width: max(0.2, width - 0.14), height: 0.05, length: 0.01, chamferRadius: 0)
+            bar.materials = [barMaterial]
+            let barNode = SCNNode(geometry: bar)
+            barNode.renderingOrder = 100
+            barNode.position = SCNVector3(CGFloat(minB.x) + (width - 0.14) / 2, y, 0)
+            node.addChildNode(barNode)
+
+            let head = SCNPyramid(width: 0.14, height: 0.14, length: 0.01)
+            head.materials = [barMaterial]
+            let headNode = SCNNode(geometry: head)
+            headNode.renderingOrder = 100
+            headNode.eulerAngles.z = -.pi / 2   // apex points +x
+            headNode.position = SCNVector3(CGFloat(maxB.x) - 0.07, y, 0)
+            node.addChildNode(headNode)
+        }
         return (node, Double(maxB.x - minB.x) / 2 * scale)
     }
 
     /// Adds a content label at `desired`, nudged along `escape` until it
     /// stops overlapping registered obstacles. Positions are math coords.
     private func addLabel(_ string: String, color: NSColor, to parent: SCNNode,
-                          parentOrigin: Vec3, desired: Vec3, escape: Vec3) {
-        let (node, halfWidth) = makeLabel(string, color: color)
+                          parentOrigin: Vec3, desired: Vec3, escape: Vec3,
+                          vectorMark: Bool = false) {
+        let (node, halfWidth) = makeLabel(string, color: color, vectorMark: vectorMark)
         let radius = max(halfWidth, labelScale * 0.6)
         let dir = escape.normalized ?? Vec3(0, 0, 1)
         var pos = desired

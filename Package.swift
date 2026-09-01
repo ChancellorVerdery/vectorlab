@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "VectorLab",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v26)],
     targets: [
         .target(name: "VectorLabCore"),
         .target(

@@ -99,19 +99,17 @@ private struct EntryRow: View {
             .accessibilityLabel("Change color")
             .opacity(isDrawable ? 1 : 0.25)
 
-            // ponytail: the row is ALWAYS a live TextField — no pretty/raw
-            // view swapping. Rendered math lives in the text itself (space
-            // and Return rewrite \theta → θ), so editing can never be
-            // blocked by focus/overlay tricks again.
+            // ponytail: the row is ALWAYS a live editor — no pretty/raw view
+            // swapping. Rendered math lives in the text itself (space and
+            // Return rewrite \theta → θ); letter subscripts are styled by
+            // RichEntryField without changing the underlying string.
             VStack(alignment: .leading, spacing: 1) {
-                TextField("type a vector, point, or expression…", text: $entry.text)
-                    .textFieldStyle(.plain)
-                    .font(.system(.body, design: .monospaced))
-                    .focused(focus, equals: entry.id)
-                    .onSubmit(renderOrSubmit)
-                    .onChange(of: entry.text) { old, new in
-                        renderOnType(old: old, new: new)
-                    }
+                RichEntryField(
+                    text: $entry.text,
+                    focus: focus,
+                    id: entry.id,
+                    onCommit: onSubmit
+                )
 
                 if let outcome {
                     if let message = outcome.errorMessage {
@@ -156,51 +154,5 @@ private struct EntryRow: View {
 
     private var isDrawable: Bool {
         outcome?.drawable != nil || outcome?.arc != nil
-    }
-
-    /// Live rendering while typing at the end of the line:
-    /// - space right after a \command (\theta, \hat(a)) renders it and
-    ///   swallows the space, like a LaTeX editor;
-    /// - _1 and ^2 become ₁ and ² the moment the digit lands.
-    /// Mid-line edits are left alone so the caret never jumps; operator
-    /// conversions (* → ·) wait for Return.
-    private func renderOnType(old: String, new: String) {
-        guard focus.wrappedValue == entry.id,
-              new.count == old.count + 1,
-              new.hasPrefix(old)          // insertion at the end only
-        else { return }
-        let trimmed = new.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.hasPrefix("#"), !trimmed.hasPrefix("//") else { return }
-
-        if new.hasSuffix(" ") {
-            let body = String(new.dropLast())
-            guard body.contains(try! Regex(#"\\[a-zA-Z]+(\s*[({]?[\p{L}\p{N}_]*[)}]?)?$"#)) else { return }
-            let pretty = MathPrint.pretty(body)
-            if pretty != body {
-                entry.text = pretty   // rendered — the space was the trigger, not content
-            }
-        } else {
-            let scripted = MathPrint.applyScripts(new)
-            if scripted != new {
-                entry.text = scripted
-            }
-        }
-    }
-
-    /// First Return renders any remaining notation in place; the next
-    /// Return, with nothing left to render, commits the line and moves on.
-    private func renderOrSubmit() {
-        let trimmed = entry.text.trimmingCharacters(in: .whitespaces)
-        let isComment = trimmed.hasPrefix("#") || trimmed.hasPrefix("//")
-        let pretty = MathPrint.pretty(entry.text)
-        if !isComment, pretty != entry.text {
-            entry.text = pretty
-            // macOS can drop first responder when the text changes underneath
-            // it — re-assert focus so the first Return keeps you in the field.
-            let id = entry.id
-            DispatchQueue.main.async { focus.wrappedValue = id }
-        } else {
-            onSubmit()
-        }
     }
 }

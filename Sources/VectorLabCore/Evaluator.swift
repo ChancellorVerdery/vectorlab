@@ -10,12 +10,19 @@ struct Evaluator {
     /// names (û) must hold true unit vectors.
     var strictNotation = false
 
-    static let reservedNames: Set<String> = ["i", "j", "k", "pi", "e", "point", "vec", "origin"]
+    static let reservedNames: Set<String> = [
+        "i", "j", "k", "î", "ĵ", "k\u{0302}", "pi", "e", "point", "vec", "origin",
+    ]
 
     static let builtinConstants: [String: Value] = [
         "i": .vector(Vec3(1, 0, 0), anchor: nil),
         "j": .vector(Vec3(0, 1, 0), anchor: nil),
         "k": .vector(Vec3(0, 0, 1), anchor: nil),
+        // Hatted basis vectors — standard statics notation. k̂ has no
+        // precomposed Unicode form, hence the combining-mark spelling.
+        "î": .vector(Vec3(1, 0, 0), anchor: nil),
+        "ĵ": .vector(Vec3(0, 1, 0), anchor: nil),
+        "k\u{0302}": .vector(Vec3(0, 0, 1), anchor: nil),
         "pi": .scalar(Double.pi),
         "e": .scalar(M_E),
         "origin": .point(.zero),

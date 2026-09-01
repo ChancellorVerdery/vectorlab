@@ -15,7 +15,7 @@ inline; vectors and points draw in the scene.
 
 ```
 \vec a = <1, 2, 3>         vector — the \vec mark (or typed arrow a⃗) is required (also [1,2,3])
-\vec F = cos(30)i + sin(30)j   component form; calls multiply into i j k implicitly
+\vec F = cos(30)i + sin(30)j   component form; i j k (or î ĵ k̂) multiply implicitly
 A = (0, 0, 4)              parentheses make a point ('point A = …' also works)
 r_AB                       B − A once points A and B exist (drawn from A)
 \hat u = unit(F)           defines û, distinct from u — must be a true unit vector

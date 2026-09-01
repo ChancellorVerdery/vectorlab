@@ -154,6 +154,15 @@ import Testing
         expectApprox(try scalar("|<3, 4>|"), 5)
     }
 
+    @Test func hattedBasisVectors() throws {
+        expectApprox(try vector("1î + 2ĵ"), Vec3(1, 2, 0))
+        expectApprox(try vector("k\u{0302}"), Vec3(0, 0, 1))
+        expectApprox(try vector(#"\hat i + \hat(j)"#), Vec3(1, 1, 0))
+        // The exact line from user feedback:
+        #expect(Engine.evaluate(["a\u{20D7} = 1î+2ĵ"])[0].errorMessage == nil)
+        #expect(throws: EvalError.self) { _ = try lastValue("î = <1, 1, 1>") }   // reserved
+    }
+
     @Test func componentIJKForm() throws {
         expectApprox(try vector("F = 3i + 4j - 5k"), Vec3(3, 4, -5))
         expectApprox(try vector("G = 2i - j"), Vec3(2, -1, 0))

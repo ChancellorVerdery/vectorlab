@@ -91,7 +91,7 @@ public final class VectorSceneController {
             switch item.drawable.shape {
             case .arrow(let tail, let vec) where vec.length > 1e-9:
                 let tipLength = min(0.25 * vec.length, 0.04 * extent + 0.06)
-                labelObstacles.append((tail + vec, tipLength + labelScale * 0.3))
+                labelObstacles.append((tail + vec, tipLength * 0.7 + labelScale * 0.2))
             case .arrow(let tail, _):
                 labelObstacles.append((tail, labelScale * 0.5))
             case .point(let p):
@@ -263,7 +263,7 @@ public final class VectorSceneController {
 
         if let label {
             addLabel(label, color: color, to: node, parentOrigin: tail,
-                     desired: tail + vec + dir * (labelScale * 1.6), escape: dir,
+                     desired: tail + vec + dir * (labelScale * 0.8), escape: dir,
                      vectorMark: true)
         }
         return node
@@ -281,7 +281,7 @@ public final class VectorSceneController {
         if let label {
             let off = Vec3(0.55, 0, 0.83)
             addLabel(label, color: color, to: node, parentOrigin: p,
-                     desired: p + off * (0.05 * extent), escape: off)
+                     desired: p + off * (0.03 * extent), escape: off)
         }
         return node
     }
@@ -377,8 +377,8 @@ public final class VectorSceneController {
         var pos = desired
         var attempts = 0
         while attempts < 10,
-              labelObstacles.contains(where: { ($0.pos - pos).length < ($0.radius + radius) * 0.9 }) {
-            pos = pos + dir * (labelScale * 0.9)
+              labelObstacles.contains(where: { ($0.pos - pos).length < ($0.radius + radius) * 0.72 }) {
+            pos = pos + dir * (labelScale * 0.6)
             attempts += 1
         }
         labelObstacles.append((pos, radius))
@@ -416,7 +416,7 @@ public final class VectorSceneController {
         let mid = theta / 2
         let bisector = cos(mid) * ua + sin(mid) * w
         addLabel(Fmt.num(arc.degrees) + "°", color: color, to: node, parentOrigin: .zero,
-                 desired: arc.origin + radius * 1.45 * bisector, escape: bisector)
+                 desired: arc.origin + radius * 1.2 * bisector, escape: bisector)
         return node
     }
 
@@ -462,7 +462,7 @@ public final class VectorSceneController {
 
         node.addChildNode(aligned)
         let (labelNode, _) = makeLabel(label, color: color, axes: true)
-        labelNode.position = s(dir * (e * 1.07))
+        labelNode.position = s(dir * (e * 1.045))
         node.addChildNode(labelNode)
         return node
     }

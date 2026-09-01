@@ -80,9 +80,10 @@ public final class VectorSceneController {
                 fold(p)
             }
         }
-        // ponytail: extent capped at 1000 — keeps Int(extent) and the grid loop
-        // safe for any input; content beyond that just clips at the far plane
-        let newExtent = min(1000, max(5, (maxCoord * 1.2).rounded(.up)))
+        // Axes: 5 units minimum, exactly 20% beyond the largest component,
+        // identical length on x, y, z. Capped at 1000 — keeps Int(extent)
+        // and the grid loop safe for any input; beyond that content clips.
+        let newExtent = min(1000, max(5, maxCoord * 1.2))
         if newExtent != extent {
             extent = newExtent
             rebuildAxesAndGrid()

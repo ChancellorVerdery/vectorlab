@@ -29,6 +29,7 @@ struct CheatSheetView: View {
             ("moment(axis, r, F)", "scalar moment about an axis"),
             ("resultant(F1, F2, …)", "sum of forces"),
             ("dist(A, B)", "distance between points"),
+            ("point(v),  vector(A)", "convert vector ↔ point"),
             ("triple(a, b, c)", "a · (b × c)"),
         ]),
         ("Math", [

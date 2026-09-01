@@ -92,6 +92,29 @@ import Testing
         }
     }
 
+    @Test func pointVectorConversions() throws {
+        let p = try lastValue("A = point(<1, 2, 3>)")
+        guard case .point(let coords) = p else {
+            Issue.record("point(vector) should make a point, got \(p)")
+            return
+        }
+        expectApprox(coords, Vec3(1, 2, 3))
+
+        expectApprox(try vector("A = (3, 4, 0)", "vector(A)"), Vec3(3, 4, 0))
+        expectApprox(try vector("vector(<1, 1, 1>)"), Vec3(1, 1, 1))   // pass-through
+        guard case .point = try lastValue("point((5, 6, 7))") else {
+            Issue.record("point(point) should pass through")
+            return
+        }
+        #expect(throws: EvalError.self) { _ = try lastValue("point(5)") }
+        #expect(throws: EvalError.self) { _ = try lastValue("vector(5)") }
+
+        // Conversions compose with strict notation.
+        #expect(Engine.evaluate(["A = point(<1, 2, 3>)"])[0].errorMessage == nil)
+        #expect(Engine.evaluate(["A = (1, 2, 3)", #"\vec a = vector(A)"#])
+            .allSatisfy { $0.errorMessage == nil })
+    }
+
     @Test func trigInDegrees() throws {
         expectApprox(try scalar("sin(30)"), 0.5, tolerance: 1e-12)
         expectApprox(try scalar("cos(60)"), 0.5, tolerance: 1e-12)

@@ -32,7 +32,7 @@ struct Evaluator {
         "unit", "hat", "normalize", "mag", "norm", "length", "abs",
         "dot", "cross", "angle", "proj", "comp", "triple", "moment",
         "dist", "resultant", "sqrt", "sin", "cos", "tan", "asin", "acos",
-        "atan", "atan2", "ln", "log", "exp", "deg", "rad",
+        "atan", "atan2", "ln", "log", "exp", "deg", "rad", "point", "vector",
     ]
 
     init() {}
@@ -372,6 +372,18 @@ struct Evaluator {
 
         case "deg": try arity(1); return .scalar(try num(0) * 180 / .pi)   // radians → degrees
         case "rad": try arity(1); return .scalar(try num(0) * .pi / 180)   // degrees → radians
+
+        case "point":   // vector → point at those coordinates (points pass through)
+            try arity(1)
+            return .point(try args[0].asPosition("point(…)"))
+
+        case "vector":  // point → its position vector from the origin (vectors pass through)
+            try arity(1)
+            switch args[0] {
+            case .vector: return args[0]
+            case .point(let p): return .vector(p, anchor: nil)
+            case .scalar: throw EvalError("vector(…) needs a point or vector, got a number")
+            }
 
         default:
             throw EvalError("unknown function '\(rawName)'")

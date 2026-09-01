@@ -41,18 +41,27 @@ public final class VectorSceneController {
 
     public func update(items: [ColoredDrawable], arcs: [ColoredArc], showAxes: Bool, showGrid: Bool) {
         var maxCoord = 2.0
+        func fold(_ v: Vec3) {
+            let c = v.maxAbsComponent
+            if c.isFinite { maxCoord = max(maxCoord, c) }
+        }
         for item in items {
             switch item.drawable.shape {
             case .arrow(let tail, let vec):
-                maxCoord = max(maxCoord, tail.maxAbsComponent, (tail + vec).maxAbsComponent)
+                fold(tail)
+                fold(tail + vec)
             case .point(let p):
-                maxCoord = max(maxCoord, p.maxAbsComponent)
+                fold(p)
             }
         }
-        let newExtent = max(5, (maxCoord * 1.2).rounded(.up))
+        // ponytail: extent capped at 1000 — keeps Int(extent) and the grid loop
+        // safe for any input; content beyond that just clips at the far plane
+        let newExtent = min(1000, max(5, (maxCoord * 1.2).rounded(.up)))
         if newExtent != extent {
             extent = newExtent
             rebuildAxesAndGrid()
+            cameraNode.camera?.zFar = max(4000, extent * 8)
+            fit()   // re-frame so a big moment vector doesn't bury the camera
         }
         axesNode.isHidden = !showAxes
         gridNode.isHidden = !showGrid
@@ -299,8 +308,9 @@ public final class VectorSceneController {
 
     private func gridGeometryNode() -> SCNNode {
         let e = Int(extent)
+        let step = max(1, e / 20)   // constant line count as extent grows
         var vertices: [SCNVector3] = []
-        for i in -e...e {
+        for i in stride(from: -e, through: e, by: step) {
             let d = Double(i)
             vertices.append(s(Vec3(d, Double(-e), 0)))
             vertices.append(s(Vec3(d, Double(e), 0)))

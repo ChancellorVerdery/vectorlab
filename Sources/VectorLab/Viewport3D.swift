@@ -3,7 +3,7 @@ import SwiftUI
 import VectorLabScene
 
 struct Viewport3D: NSViewRepresentable {
-    let model: AppModel
+    let proxy: ViewportProxy
     var items: [ColoredDrawable]
     var arcs: [ColoredArc]
     var showAxes: Bool
@@ -32,7 +32,7 @@ struct Viewport3D: NSViewRepresentable {
         view.allowsCameraControl = true
         view.autoenablesDefaultLighting = true
         view.antialiasingMode = .multisampling4X
-        model.snapshotProvider = { [weak view] in view?.snapshot() }
+        proxy.view = view
         return view
     }
 

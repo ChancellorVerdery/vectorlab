@@ -6,6 +6,22 @@ import VectorLabCore
 @testable import VectorLabScene
 
 @Suite struct RenderSmokeTests {
+    /// Review finding: unclamped extent used to trap Int() on infinite
+    /// coordinates and hang building the grid for large finite ones.
+    @Test func extremeCoordinatesDoNotCrashSceneUpdate() {
+        let controller = VectorSceneController()
+        let items = [
+            ColoredDrawable(
+                drawable: Drawable(shape: .arrow(tail: .zero, vector: Vec3(1e20, 0, 0)), label: nil),
+                colorIndex: 0),
+            ColoredDrawable(
+                drawable: Drawable(shape: .point(Vec3(.infinity, 0, 0)), label: nil),
+                colorIndex: 1),
+        ]
+        controller.update(items: items, arcs: [], showAxes: true, showGrid: true)
+        controller.update(items: [], arcs: [], showAxes: true, showGrid: true)
+    }
+
     /// Offscreen-render a small workspace and check the image isn't blank.
     /// Headless-safe: no window is ever created.
     @Test func offscreenRenderProducesContent() throws {

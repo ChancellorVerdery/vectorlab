@@ -100,13 +100,21 @@ struct Parser {
         return lhs
     }
 
-    /// Starters that allow implicit multiplication: 3i, 2(a+b), 4⟨1,0,0⟩.
-    /// `|` is deliberately excluded — it would break closing-pipe detection.
+    /// Starters that allow implicit multiplication after a NUMBER literal:
+    /// 3i, 2x, 2(a+b), 4⟨1,0,0⟩. `|` is excluded (breaks closing-pipe
+    /// detection), and numbers are excluded so a missed comma (`<1 2, 3>`)
+    /// or missed operator (`100 200`) errors instead of silently multiplying.
     private func startsImplicitFactor(_ t: Token) -> Bool {
         switch t {
-        case .number, .ident, .lparen, .langle, .lbracket: return true
+        case .ident, .lparen, .langle, .lbracket: return true
         default: return false
         }
+    }
+
+    /// True when the token just consumed was a number literal.
+    private func previousTokenIsNumber() -> Bool {
+        guard i > 0, case .number = tokens[i - 1] else { return false }
+        return true
     }
 
     private mutating func multiplicative() throws -> Expr {
@@ -119,7 +127,13 @@ struct Parser {
             case .dotOp: op = .dotProduct
             case .crossOp: op = .crossProduct
             default:
-                if startsImplicitFactor(t) { op = .mul } else { break loop }
+                // ponytail: juxtaposition multiplies only after a number literal
+                // (3i, 2x); chains like `2 pi r` or `(a+b)c` need explicit `*`
+                if startsImplicitFactor(t), previousTokenIsNumber() {
+                    op = .mul
+                } else {
+                    break loop
+                }
             }
             if t == .star || t == .slash || t == .dotOp || t == .crossOp { i += 1 }
             let rhs = try polarTerm()
@@ -132,10 +146,20 @@ struct Parser {
         let lhs = try unary()
         if peek == .angleOp {
             i += 1
-            let angle = try unary()
+            var angle = try unary()
+            // Fold 10∠2theta / 10∠2(…): implicit multiply inside the angle operand,
+            // which sits below multiplicative() and would otherwise miss it.
+            while let t = peek, t == .lparen || isIdentToken(t), previousTokenIsNumber() {
+                angle = .binary(.mul, angle, try unary())
+            }
             return .polar(lhs, angle)
         }
         return lhs
+    }
+
+    private func isIdentToken(_ t: Token) -> Bool {
+        if case .ident = t { return true }
+        return false
     }
 
     private mutating func unary() throws -> Expr {

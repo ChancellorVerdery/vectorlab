@@ -6,6 +6,7 @@ import VectorLabScene
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var showingHelp = false
+    @State private var viewportProxy = ViewportProxy()
 
     var body: some View {
         @Bindable var model = model
@@ -14,7 +15,7 @@ struct ContentView: View {
                 .frame(minWidth: 320, idealWidth: 400)
 
             Viewport3D(
-                model: model,
+                proxy: viewportProxy,
                 items: model.coloredDrawables,
                 arcs: model.coloredArcs,
                 showAxes: model.showAxes,
@@ -66,7 +67,7 @@ struct ContentView: View {
     }
 
     private func saveSnapshot() {
-        guard let image = model.snapshotProvider?() else { return }
+        guard let image = viewportProxy.snapshot() else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "VectorLab.png"

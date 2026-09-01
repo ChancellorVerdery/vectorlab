@@ -15,8 +15,6 @@ final class AppModel {
     var presetToken = 0
     var fitToken = 0
 
-    @ObservationIgnored var snapshotProvider: (() -> NSImage?)?
-
     init() {
         entries = Self.loadEntries() ?? Self.sampleEntries()
         reevaluate()

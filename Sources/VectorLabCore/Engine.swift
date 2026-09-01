@@ -77,9 +77,13 @@ public enum Engine {
         case .scalar:
             return nil
         case .vector(let v, let anchor):
+            let tail = anchor ?? .zero
+            // Overflowed values still show as text (∞) but are never drawn.
+            guard v.isFinite, tail.isFinite else { return nil }
             let label = name ?? shortLabel(sourceLine)
-            return Drawable(shape: .arrow(tail: anchor ?? .zero, vector: v), label: label)
+            return Drawable(shape: .arrow(tail: tail, vector: v), label: label)
         case .point(let p):
+            guard p.isFinite else { return nil }
             return Drawable(shape: .point(p), label: name ?? shortLabel(sourceLine))
         }
     }

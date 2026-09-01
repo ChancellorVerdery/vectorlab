@@ -129,6 +129,37 @@ import Testing
         expectApprox(try scalar("a = 1", "a = 2", "a"), 2)
     }
 
+    @Test func malformedNumbersError() {
+        // Review finding: these used to silently lex as 0 with status ok.
+        let outcomes = Engine.evaluate(["1.2.3", "a = 1..5", "3²", "x = ½"])
+        #expect(outcomes.allSatisfy { $0.errorMessage != nil })
+    }
+
+    @Test func missingCommaOrOperatorErrors() {
+        // Review finding: number-number adjacency used to silently multiply.
+        let outcomes = Engine.evaluate(["<1 2, 3>", "100 200", "F = 2 3i"])
+        #expect(outcomes.allSatisfy { $0.errorMessage != nil })
+    }
+
+    @Test func polarAngleImplicitFactor() throws {
+        // Review finding: 10∠2theta used to parse as (10∠2)*theta.
+        expectApprox(try vector("theta = 30", "T = 10∠2theta"),
+                     Vec3(5, 5 * 3.0.squareRoot(), 0), tolerance: 1e-9)
+    }
+
+    @Test func nonFiniteValuesAreNotDrawable() {
+        let outcomes = Engine.evaluate(["<1e308, 0, 0> * 10"])
+        #expect(outcomes[0].errorMessage == nil)
+        #expect(outcomes[0].drawable == nil)
+    }
+
+    @Test func hugeFiniteNumbersFormatWithoutInf() throws {
+        let s = Fmt.num(1e305)
+        #expect(!s.contains("inf"))
+        #expect(s.first?.isNumber == true && s.count > 300)   // full digit string
+        expectApprox(try scalar("10^305"), 1e305, tolerance: 1e290)
+    }
+
     @Test func junkNeverCrashes() {
         let junk = ["<<<", "|||", "a ==== b", "\\frac{1}{2}", ")(", "1 +", "<1,2,3,4>",
                     "point = 3", "@@", "^", "...", "a.w", "5∠", "|1", "(1,2,3,4,5)"]

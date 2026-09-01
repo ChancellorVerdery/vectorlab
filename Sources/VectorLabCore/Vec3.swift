@@ -37,4 +37,6 @@ public struct Vec3: Hashable, Codable, Sendable {
     }
 
     public var maxAbsComponent: Double { max(abs(x), abs(y), abs(z)) }
+
+    public var isFinite: Bool { x.isFinite && y.isFinite && z.isFinite }
 }

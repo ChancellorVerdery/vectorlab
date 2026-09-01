@@ -10,23 +10,27 @@ enum Token: Equatable {
 }
 
 enum Lexer {
+    /// ASCII digits only — Unicode numerals like ² or ½ must error, not lex.
+    private static func isDigit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
+
     static func tokenize(_ input: String) throws -> [Token] {
         var tokens: [Token] = []
         let chars = Array(input)
         var i = 0
 
-        func scanNumber() {
+        func scanNumber() throws {
             var s = ""
-            while i < chars.count, chars[i].isNumber || chars[i] == "." {
+            while i < chars.count, isDigit(chars[i]) || chars[i] == "." {
                 s.append(chars[i]); i += 1
             }
             if i < chars.count, chars[i] == "e" || chars[i] == "E",
-               i + 1 < chars.count, chars[i + 1].isNumber || ((chars[i + 1] == "+" || chars[i + 1] == "-") && i + 2 < chars.count && chars[i + 2].isNumber) {
+               i + 1 < chars.count, isDigit(chars[i + 1]) || ((chars[i + 1] == "+" || chars[i + 1] == "-") && i + 2 < chars.count && isDigit(chars[i + 2])) {
                 s.append(chars[i]); i += 1
                 if chars[i] == "+" || chars[i] == "-" { s.append(chars[i]); i += 1 }
-                while i < chars.count, chars[i].isNumber { s.append(chars[i]); i += 1 }
+                while i < chars.count, isDigit(chars[i]) { s.append(chars[i]); i += 1 }
             }
-            tokens.append(.number(Double(s) ?? 0))
+            guard let d = Double(s) else { throw EvalError("invalid number '\(s)'") }
+            tokens.append(.number(d))
         }
 
         func scanIdent() -> String {
@@ -40,8 +44,8 @@ enum Lexer {
         while i < chars.count {
             let c = chars[i]
             if c.isWhitespace { i += 1; continue }
-            if c.isNumber { scanNumber(); continue }
-            if c == ".", i + 1 < chars.count, chars[i + 1].isNumber { scanNumber(); continue }
+            if isDigit(c) { try scanNumber(); continue }
+            if c == ".", i + 1 < chars.count, isDigit(chars[i + 1]) { try scanNumber(); continue }
             if c.isLetter || c == "_" {
                 let word = scanIdent()
                 tokens.append(word == "vec" ? .vecKeyword : .ident(word))

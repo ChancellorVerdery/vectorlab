@@ -1,0 +1,138 @@
+import Foundation
+import Testing
+@testable import VectorLabCore
+
+@Suite struct NotationTests {
+    @Test func angleBracketVector() throws {
+        expectApprox(try vector("a = <1, 2, 3>", "a"), Vec3(1, 2, 3))
+    }
+
+    @Test func latexVecKeyword() throws {
+        expectApprox(try vector(#"\vec a = <1, 2, 3>"#, "a"), Vec3(1, 2, 3))
+        expectApprox(try vector(#"\vector b = [4, 5, 6]"#, "b"), Vec3(4, 5, 6))
+        expectApprox(try vector(#"\hat u = unit(<3, 4, 0>)"#, "u"), Vec3(0.6, 0.8, 0))
+    }
+
+    @Test func latexAngleBrackets() throws {
+        expectApprox(try vector(#"a = \langle 1, 2, 3 \rangle"#, "a"), Vec3(1, 2, 3))
+        expectApprox(try vector("b = ⟨4, 5, 6⟩", "b"), Vec3(4, 5, 6))
+    }
+
+    @Test func parenAndBracketVectors() throws {
+        expectApprox(try vector("a = (1, 2, 3)", "a"), Vec3(1, 2, 3))
+        expectApprox(try vector("b = [1, 2, 3]", "b"), Vec3(1, 2, 3))
+    }
+
+    @Test func twoDVectorsGetZeroZ() throws {
+        expectApprox(try vector("a = <3, 4>", "a"), Vec3(3, 4, 0))
+        expectApprox(try scalar("|<3, 4>|"), 5)
+    }
+
+    @Test func componentIJKForm() throws {
+        expectApprox(try vector("F = 3i + 4j - 5k"), Vec3(3, 4, -5))
+        expectApprox(try vector("G = 2i - j"), Vec3(2, -1, 0))
+        expectApprox(try vector("H = -k"), Vec3(0, 0, -1))
+    }
+
+    @Test func polarForm() throws {
+        expectApprox(try vector("T = 10∠60"), Vec3(5, 5 * 3.0.squareRoot(), 0), tolerance: 1e-9)
+        expectApprox(try vector("T = 10 @ 60"), Vec3(5, 5 * 3.0.squareRoot(), 0), tolerance: 1e-9)
+        expectApprox(try vector("T = 5∠36.8698976458°"), Vec3(4, 3, 0), tolerance: 1e-9)
+    }
+
+    @Test func latexOperators() throws {
+        expectApprox(try scalar(#"<1,2,3> \cdot <4,-5,6>"#), 12)
+        expectApprox(try vector(#"<1,0,0> \times <0,1,0>"#), Vec3(0, 0, 1))
+        expectApprox(try scalar("<1,2,3> · <4,-5,6>"), 12)
+        expectApprox(try vector("<1,2,3> × <4,5,6>"), Vec3(-3, 6, -3))
+    }
+
+    @Test func pointDefinition() throws {
+        let v = try lastValue("point A = (1, 2, 3)", "A")
+        guard case .point(let p) = v else {
+            Issue.record("expected point, got \(v)")
+            return
+        }
+        expectApprox(p, Vec3(1, 2, 3))
+    }
+
+    @Test func autoPositionVector() throws {
+        let v = try lastValue("point A = (0, 0, 4)", "point B = (2, 3, 0)", "r_AB")
+        guard case .vector(let vec, let anchor) = v else {
+            Issue.record("expected vector")
+            return
+        }
+        expectApprox(vec, Vec3(2, 3, -4))
+        #expect(anchor == Vec3(0, 0, 4))   // drawn from A
+    }
+
+    @Test func autoPositionVectorNeedsPoints() {
+        #expect(throws: EvalError.self) {
+            _ = try lastValue("r_AB")
+        }
+    }
+
+    @Test func ambiguousAutoPositionVector() throws {
+        #expect(throws: EvalError.self) {
+            _ = try lastValue(
+                "point A = (0,0,0)", "point BC = (1,1,1)",
+                "point AB = (2,2,2)", "point C = (3,3,3)",
+                "r_ABC")
+        }
+    }
+
+    @Test func implicitMultiplication() throws {
+        expectApprox(try scalar("2(3 + 1)"), 8)
+        expectApprox(try scalar("x = 5", "2x"), 10)
+        expectApprox(try vector("2<1, 2, 3>"), Vec3(2, 4, 6))
+    }
+
+    @Test func precedence() throws {
+        expectApprox(try scalar("2 + 3 * 4"), 14)
+        expectApprox(try scalar("2^3^2"), 512)      // right-assoc
+        expectApprox(try scalar("-3^2"), -9)        // unary minus binds looser than ^
+        expectApprox(try scalar("2^-1"), 0.5)
+    }
+
+    @Test func degreeSignIsCosmetic() throws {
+        expectApprox(try scalar("theta = 30°", "theta"), 30)
+        expectApprox(try scalar("cos(60°)"), 0.5, tolerance: 1e-12)
+    }
+
+    @Test func memberAccess() throws {
+        expectApprox(try scalar("F = <80, -60, -240>", "F.x"), 80)
+        expectApprox(try scalar("F = <80, -60, -240>", "F.z"), -240)
+        expectApprox(try scalar("point A = (1, 2, 3)", "A.y"), 2)
+    }
+
+    @Test func commentsAndBlanks() throws {
+        let outcomes = Engine.evaluate(["# hello", "", "a = <1,1,1>"])
+        #expect(outcomes[0].status == .comment)
+        #expect(outcomes[1].status == .blank)
+        #expect(outcomes[2].status == .ok)
+    }
+
+    @Test func errorsDoNotStopEvaluation() throws {
+        let outcomes = Engine.evaluate(["a = <1,2,3>", "garbage )( here", "a * a"])
+        #expect(outcomes[1].errorMessage != nil)
+        #expect(outcomes[2].status == .ok)
+        #expect(outcomes[2].resultText == "14")
+    }
+
+    @Test func reservedNamesRejected() {
+        for line in ["i = <1,1,1>", "pi = 3", "k = 2j"] {
+            #expect(throws: EvalError.self) { _ = try lastValue(line) }
+        }
+    }
+
+    @Test func redefinitionAllowed() throws {
+        expectApprox(try scalar("a = 1", "a = 2", "a"), 2)
+    }
+
+    @Test func junkNeverCrashes() {
+        let junk = ["<<<", "|||", "a ==== b", "\\frac{1}{2}", ")(", "1 +", "<1,2,3,4>",
+                    "point = 3", "@@", "^", "...", "a.w", "5∠", "|1", "(1,2,3,4,5)"]
+        let outcomes = Engine.evaluate(junk)
+        #expect(outcomes.allSatisfy { $0.errorMessage != nil })
+    }
+}

@@ -67,6 +67,11 @@ struct RichEntryField: View {
         let sub = AttributeContainer()
             .font(.system(size: 10, design: .monospaced))
             .baselineOffset(-3)
+        // The underscore stays in the string (it IS the notation) but
+        // renders invisibly — you see r with a bare subscript AB.
+        let hiddenUnderscore = AttributeContainer()
+            .font(.system(size: 1))
+            .foregroundColor(.clear)
 
         var result = AttributedString()
         var plain = ""
@@ -90,7 +95,8 @@ struct RichEntryField: View {
                 }
                 if sawLetter {
                     flushPlain()
-                    result += AttributedString(run, attributes: sub)
+                    result += AttributedString("_", attributes: hiddenUnderscore)
+                    result += AttributedString(String(run.dropFirst()), attributes: sub)
                     idx = j
                     continue
                 }

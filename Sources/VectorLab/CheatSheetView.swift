@@ -3,7 +3,7 @@ import SwiftUI
 struct CheatSheetView: View {
     private let sections: [(String, [(String, String)])] = [
         ("Define", [
-            ("\\vec a = <1, 2, 3>", "vector — the \\vec mark (or typed a⃗) is required (also [1,2,3])"),
+            ("a = <1, 2, 3>", "vector — the arrow (or hat if |a| = 1) appears automatically"),
             ("\\vec F = 3i + 4j - 5k", "component form — î ĵ k̂ work too, trig works: cos(30)i"),
             ("A = (0, 0, 4)", "parentheses make a point (the point keyword is optional)"),
             ("r_AB", "B − A once points A, B exist"),

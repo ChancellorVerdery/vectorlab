@@ -121,12 +121,10 @@ struct Evaluator {
             .contains { $0.value == 0x0302 }
         switch value {
         case .vector(let v, _):
-            if isHat {
-                if abs(v.length - 1) > 1e-6 {
-                    throw EvalError("\(name) must be a unit vector, but |\(name)| = \(Fmt.num(v.length)) — wrap the value in unit(…)")
-                }
-            } else if !isVec {
-                throw EvalError("'\(name)' holds a vector — write \\vec \(name) (renders as \(name)\u{20D7}) to use proper notation")
+            // Missing \vec is no longer an error — the app applies the
+            // notation automatically (arrow, or hat for unit magnitude).
+            if isHat, abs(v.length - 1) > 1e-6 {
+                throw EvalError("\(name) must be a unit vector, but |\(name)| = \(Fmt.num(v.length)) — wrap the value in unit(…)")
             }
         case .scalar:
             if isHat { throw EvalError("\(name) must be a unit vector, but got a number") }

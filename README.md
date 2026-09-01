@@ -14,7 +14,7 @@ inline; vectors and points draw in the scene.
 ## Notation
 
 ```
-\vec a = <1, 2, 3>         vector — the \vec mark (or typed arrow a⃗) is required (also [1,2,3])
+a = <1, 2, 3>              vector — arrow (or hat when |a| = 1) renders automatically
 \vec F = cos(30)i + sin(30)j   component form; i j k (or î ĵ k̂) multiply implicitly
 A = (0, 0, 4)              parentheses make a point ('point A = …' also works)
 r_AB                       B − A once points A and B exist (drawn from A)
@@ -39,9 +39,11 @@ sqrt ln log exp pi e       scalar math;  rad(x) / deg(x) convert
 ```
 
 Conventions: z is up (statics style), trig is in degrees, `i j k π e origin`
-are reserved. Strict notation is enforced as a teaching aid: a definition
-holding a vector needs the `\vec`/arrow mark, and a hatted name (û) must
-have magnitude 1 — the error messages show the correct form. The notebook re-evaluates top-to-bottom on every edit and
+are reserved. Notation is applied automatically as a teaching aid: defined
+vectors get the arrow drawn over their name, unit vectors get the hat, and
+the decoration follows the value — change an upstream variable and it flips.
+Explicit marks still parse, and an explicit `\hat` name (û) must truly have
+magnitude 1. The notebook re-evaluates top-to-bottom on every edit and
 autosaves to `~/Library/Application Support/VectorLab/workspace.json`.
 Typing a space (or Return) renders finished notation in place — \hat u → û,
 \vec F → F⃗, \theta → θ, < > → ⟨ ⟩ — and Return again commits the line.

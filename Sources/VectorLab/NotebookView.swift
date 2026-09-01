@@ -108,6 +108,7 @@ private struct EntryRow: View {
                     text: $entry.text,
                     focus: focus,
                     id: entry.id,
+                    decoration: outcome?.decoration,
                     onCommit: onSubmit
                 )
 

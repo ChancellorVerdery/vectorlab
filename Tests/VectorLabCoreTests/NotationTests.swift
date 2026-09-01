@@ -37,16 +37,37 @@ import Testing
         expectApprox(try scalar("mag(<3, 4, 0>)(2)"), 10)
     }
 
-    @Test func strictNotationRequiresVectorMark() {
-        // Plain names may not hold vectors — the decoration teaches notation.
-        #expect(Engine.evaluate(["P = <1, 2, 3>"])[0].errorMessage?.contains("\\vec") == true)
-        #expect(Engine.evaluate(["vec P = <1, 2, 3>"])[0].errorMessage == nil)
+    @Test func automaticNotation() {
+        // Missing marks are no longer errors — the app derives the notation
+        // from the VALUE: arrow for vectors, hat for unit magnitude.
+        let outcomes = Engine.evaluate([
+            "P = <1, 2, 3>",
+            "u = unit(P)",
+            "m = 5",
+            "A = (1, 2, 3)",
+            "e1 = <1, 0, 0>",
+        ])
+        #expect(outcomes.allSatisfy { $0.errorMessage == nil })
+        #expect(outcomes[0].decoration == .vectorArrow)
+        #expect(outcomes[1].decoration == .unitHat)
+        #expect(outcomes[2].decoration == nil)   // scalar
+        #expect(outcomes[3].decoration == nil)   // point
+        #expect(outcomes[4].decoration == .unitHat)   // |<1,0,0>| = 1
+
+        // Explicit forms still parse; explicit marks must still be true.
         #expect(Engine.evaluate([#"\vec P = <1, 2, 3>"#])[0].errorMessage == nil)
-        #expect(Engine.evaluate(["P\u{20D7} = <1, 2, 3>"])[0].errorMessage == nil)   // typed arrow
-        #expect(Engine.evaluate(["m = 5"])[0].errorMessage == nil)                   // scalars plain
-        #expect(Engine.evaluate(["point A = (1, 2, 3)"])[0].errorMessage == nil)
-        #expect(Engine.evaluate([#"\vec x = 5"#])[0].errorMessage != nil)            // marked but scalar
-        #expect(Engine.evaluate(["P = <1, 2, 3>"], strictNotation: false)[0].errorMessage == nil)
+        #expect(Engine.evaluate(["P\u{20D7} = <1, 2, 3>"])[0].errorMessage == nil)
+        #expect(Engine.evaluate([#"\vec x = 5"#])[0].errorMessage != nil)   // marked but scalar
+        // û wears its hat in the glyph — no extra derived decoration.
+        #expect(Engine.evaluate([#"\hat u = i"#])[0].decoration == nil)
+    }
+
+    @Test func decorationFollowsValueChanges() {
+        // Same definition of a, different upstream m: hat ↔ arrow flips.
+        let unit = Engine.evaluate(["m = 1", "a = m * <1, 0, 0>"])
+        #expect(unit[1].decoration == .unitHat)
+        let scaled = Engine.evaluate(["m = 5", "a = m * <1, 0, 0>"])
+        #expect(scaled[1].decoration == .vectorArrow)
     }
 
     @Test func strictHatRequiresUnitMagnitude() {

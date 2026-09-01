@@ -30,6 +30,14 @@ public struct ArcSpec: Equatable, Sendable {
     }
 }
 
+/// Notation the app draws over a defined name, derived from its VALUE:
+/// arrow for vectors, hat for unit vectors. Updates automatically when
+/// upstream variables change the value.
+public enum LineDecoration: Equatable, Sendable {
+    case vectorArrow
+    case unitHat
+}
+
 public struct LineOutcome: Equatable, Sendable {
     public enum Status: Equatable, Sendable {
         case blank
@@ -41,6 +49,7 @@ public struct LineOutcome: Equatable, Sendable {
     public var resultText: String
     public var drawable: Drawable?
     public var arc: ArcSpec?
+    public var decoration: LineDecoration?
 
     public var errorMessage: String? {
         if case .error(let m) = status { return m }
@@ -62,17 +71,30 @@ public enum Engine {
                 guard let (name, value) = try evaluator.execute(stmt) else {
                     return LineOutcome(
                         status: line.trimmingCharacters(in: .whitespaces).isEmpty ? .blank : .comment,
-                        resultText: "", drawable: nil, arc: nil)
+                        resultText: "", drawable: nil, arc: nil, decoration: nil)
                 }
                 let drawable = Self.drawable(for: value, name: name, sourceLine: line)
                 let arc = Self.arc(for: stmt, evaluator: evaluator)
-                return LineOutcome(status: .ok, resultText: Fmt.value(value), drawable: drawable, arc: arc)
+                return LineOutcome(status: .ok, resultText: Fmt.value(value), drawable: drawable,
+                                   arc: arc, decoration: Self.decoration(for: value, name: name))
             } catch let err as EvalError {
-                return LineOutcome(status: .error(err.message), resultText: "", drawable: nil, arc: nil)
+                return LineOutcome(status: .error(err.message), resultText: "", drawable: nil,
+                                   arc: nil, decoration: nil)
             } catch {
-                return LineOutcome(status: .error("\(error)"), resultText: "", drawable: nil, arc: nil)
+                return LineOutcome(status: .error("\(error)"), resultText: "", drawable: nil,
+                                   arc: nil, decoration: nil)
             }
         }
+    }
+
+    /// Definitions get notation derived from their value. Explicitly hatted
+    /// names (û) already wear their notation in the glyph — skip those.
+    private static func decoration(for value: Value, name: String?) -> LineDecoration? {
+        guard let name, case .vector(let v, _) = value else { return nil }
+        let isHattedName = name.decomposedStringWithCanonicalMapping.unicodeScalars
+            .contains { $0.value == 0x0302 }
+        guard !isHattedName else { return nil }
+        return abs(v.length - 1) <= 1e-6 ? .unitHat : .vectorArrow
     }
 
     private static func drawable(for value: Value, name: String?, sourceLine: String) -> Drawable? {

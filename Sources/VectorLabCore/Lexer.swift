@@ -43,16 +43,21 @@ enum Lexer {
             tokens.append(.number(d))
         }
 
-        func scanIdent() -> String {
+        func scanIdent() -> (name: String, hadArrow: Bool) {
             var s = ""
             while i < chars.count, isIdentChar(chars[i]) {
                 s.append(chars[i]); i += 1
             }
-            // The combining arrow (F⃗) is cosmetic like \vec — F⃗ ≡ F.
+            // The arrow in F⃗ means the same as \vec F — strip it from the
+            // name, but report it so definitions count as vector-marked.
             // û typed directly and u + combining hat must be the same name.
-            let cleaned = s.replacingOccurrences(of: "\u{20D7}", with: "")
+            // Scalar-level check: grapheme-based contains() can't find a
+            // lone combining mark inside a cluster like P⃗.
+            let hadArrow = s.unicodeScalars.contains { $0.value == 0x20D7 }
+            var cleaned = s.replacingOccurrences(of: "\u{20D7}", with: "")
                 .precomposedStringWithCanonicalMapping
-            return cleaned == "π" ? "pi" : cleaned
+            if cleaned == "π" { cleaned = "pi" }
+            return (cleaned, hadArrow)
         }
 
         while i < chars.count {
@@ -61,13 +66,14 @@ enum Lexer {
             if isDigit(c) { try scanNumber(); continue }
             if c == ".", i + 1 < chars.count, isDigit(chars[i + 1]) { try scanNumber(); continue }
             if isIdentChar(c) {
-                let word = scanIdent()
+                let (word, hadArrow) = scanIdent()
+                if hadArrow { tokens.append(.vecKeyword) }
                 tokens.append(word == "vec" ? .vecKeyword : .ident(word))
                 continue
             }
             if c == "\\" {
                 i += 1
-                let cmd = scanIdent()
+                let cmd = scanIdent().name
                 switch cmd {
                 case "vec", "vector", "overrightarrow": tokens.append(.vecKeyword)
                 case "hat": tokens.append(.hatKeyword)

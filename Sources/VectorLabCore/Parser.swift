@@ -19,7 +19,7 @@ enum BinOp: Equatable {
 enum Statement: Equatable {
     case blank
     case comment(String)
-    case definition(name: String, isPoint: Bool, expr: Expr)
+    case definition(name: String, isPoint: Bool, isVec: Bool, expr: Expr)
     case expression(Expr)
 }
 
@@ -81,21 +81,25 @@ struct Parser {
     }
 
     private mutating func statement() throws -> Statement {
-        if peek == .vecKeyword { i += 1 }   // \vec F = ...  or bare  \vec r_AB
+        var isVec = false
+        if peek == .vecKeyword {   // \vec F = ...,  F⃗ = ...,  or bare  \vec r_AB
+            isVec = true
+            i += 1
+        }
 
         var isPoint = false
         if case .ident("point") = peek ?? .comma,
            case .ident = peek(1) ?? .comma, peek(2) == .equals {
             isPoint = true
             i += 1
-            if peek == .vecKeyword { i += 1 }
+            if peek == .vecKeyword { isVec = true; i += 1 }
         }
 
         if case .ident(let name) = peek ?? .comma, peek(1) == .equals {
             i += 2
             let e = try expression()
             try expectEnd()
-            return .definition(name: name, isPoint: isPoint, expr: e)
+            return .definition(name: name, isPoint: isPoint, isVec: isVec, expr: e)
         }
         if isPoint { throw EvalError("expected: point NAME = (x, y, z)") }
 

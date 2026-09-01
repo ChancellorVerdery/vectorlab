@@ -5,6 +5,11 @@ import Foundation
 struct Evaluator {
     private(set) var env: [String: Value] = [:]
 
+    /// When on (the app default), definitions must use proper notation:
+    /// vector values need the \vec mark (or a typed arrow), and hatted
+    /// names (û) must hold true unit vectors.
+    var strictNotation = false
+
     static let reservedNames: Set<String> = ["i", "j", "k", "pi", "e", "point", "vec", "origin"]
 
     static let builtinConstants: [String: Value] = [
@@ -31,13 +36,16 @@ struct Evaluator {
         switch stmt {
         case .blank, .comment:
             return nil
-        case .definition(let name, let isPoint, let expr):
+        case .definition(let name, let isPoint, let isVec, let expr):
             guard !Self.reservedNames.contains(name) else {
                 throw EvalError("'\(name)' is reserved")
             }
             var value = try eval(expr)
             if isPoint {
                 value = .point(try value.asPosition("point \(name)"))
+            }
+            if strictNotation {
+                try checkNotation(name: name, isVec: isVec, isPoint: isPoint, value: value)
             }
             env[name] = value
             return (name, value)
@@ -90,6 +98,31 @@ struct Evaluator {
 
         case .call(let name, let args):
             return try call(name, args)
+        }
+    }
+
+    // MARK: - Strict notation
+
+    private func checkNotation(name: String, isVec: Bool, isPoint: Bool, value: Value) throws {
+        // Scalar-level check: grapheme-based contains() can't see the
+        // combining hat inside the û cluster.
+        let isHat = name.decomposedStringWithCanonicalMapping.unicodeScalars
+            .contains { $0.value == 0x0302 }
+        switch value {
+        case .vector(let v, _):
+            if isHat {
+                if abs(v.length - 1) > 1e-6 {
+                    throw EvalError("\(name) must be a unit vector, but |\(name)| = \(Fmt.num(v.length)) — wrap the value in unit(…)")
+                }
+            } else if !isVec {
+                throw EvalError("'\(name)' holds a vector — write \\vec \(name) (renders as \(name)\u{20D7}) to use proper notation")
+            }
+        case .scalar:
+            if isHat { throw EvalError("\(name) must be a unit vector, but got a number") }
+            if isVec { throw EvalError("\\vec \(name) must be a vector, but got a number") }
+        case .point:
+            if isHat { throw EvalError("\(name) must be a unit vector, not a point") }
+            if isVec, !isPoint { throw EvalError("\\vec \(name) must be a vector, but got a point") }
         }
     }
 

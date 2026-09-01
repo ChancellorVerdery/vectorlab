@@ -3,13 +3,13 @@ import SwiftUI
 struct CheatSheetView: View {
     private let sections: [(String, [(String, String)])] = [
         ("Define", [
-            ("a = <1, 2, 3>", "vector (also [1,2,3] or (1,2,3))"),
-            ("\\vec F = 3i + 4j - 5k", "component form"),
+            ("\\vec a = <1, 2, 3>", "vector — the \\vec mark (or typed a⃗) is required"),
+            ("\\vec F = 3i + 4j - 5k", "component form (trig works: cos(30)i + sin(30)j)"),
             ("point A = (0, 0, 4)", "point, drawn as a dot"),
             ("r_AB", "B − A once points A, B exist"),
-            ("\\hat u = unit(F)", "defines û — its own variable (also \\hat(u))"),
-            ("F = cos(30)i + sin(30)j", "component form with trig"),
-            ("T = 50∠30", "2D: magnitude ∠ angle°  (or 50 @ 30)"),
+            ("\\hat u = unit(F)", "û — must be a true unit vector (|û| = 1 enforced)"),
+            ("\\vec T = 50∠30", "2D: magnitude ∠ angle°  (or 50 @ 30)"),
+            ("m = 12.5", "scalars use plain names"),
             ("# heading", "comment line"),
         ]),
         ("Operate", [

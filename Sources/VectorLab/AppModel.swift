@@ -66,6 +66,13 @@ final class AppModel {
         if entries.isEmpty { entries = [Entry()] }
     }
 
+    func move(_ id: UUID, by delta: Int) {
+        guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
+        let target = idx + delta
+        guard entries.indices.contains(target) else { return }
+        entries.swapAt(idx, target)
+    }
+
     func cycleColor(_ id: UUID) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[idx].colorIndex = (entries[idx].colorIndex + 1) % Palette.nsColors.count
@@ -111,11 +118,11 @@ final class AppModel {
             "point A = (0, 0, 12)",
             "point B = (4, -3, 0)",
             "r_AB",
-            "F = 260 * unit(r_AB)",
-            "M_O = moment(r_OA, F)",
+            "\\vec F = 260 * unit(r_AB)",
+            "\\vec M_O = moment(r_OA, F)",
             "angle(F, r_OA)",
             "",
-            "# Try: a = <1,2,3>   b = 2i - j   a*b   cross(a,b)   T = 50∠30",
+            "# Try: \\vec a = <1,2,3>   \\hat u = unit(a)   a*û   cross(a, û)   \\vec T = 50∠30",
         ]
         return lines.enumerated().map { i, text in
             Entry(text: text, colorIndex: i % Palette.nsColors.count)

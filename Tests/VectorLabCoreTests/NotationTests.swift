@@ -37,18 +37,38 @@ import Testing
         expectApprox(try scalar("mag(<3, 4, 0>)(2)"), 10)
     }
 
+    @Test func strictNotationRequiresVectorMark() {
+        // Plain names may not hold vectors — the decoration teaches notation.
+        #expect(Engine.evaluate(["P = <1, 2, 3>"])[0].errorMessage?.contains("\\vec") == true)
+        #expect(Engine.evaluate(["vec P = <1, 2, 3>"])[0].errorMessage == nil)
+        #expect(Engine.evaluate([#"\vec P = <1, 2, 3>"#])[0].errorMessage == nil)
+        #expect(Engine.evaluate(["P\u{20D7} = <1, 2, 3>"])[0].errorMessage == nil)   // typed arrow
+        #expect(Engine.evaluate(["m = 5"])[0].errorMessage == nil)                   // scalars plain
+        #expect(Engine.evaluate(["point A = (1, 2, 3)"])[0].errorMessage == nil)
+        #expect(Engine.evaluate([#"\vec x = 5"#])[0].errorMessage != nil)            // marked but scalar
+        #expect(Engine.evaluate(["P = <1, 2, 3>"], strictNotation: false)[0].errorMessage == nil)
+    }
+
+    @Test func strictHatRequiresUnitMagnitude() {
+        // The exact case from user feedback: |<0.5, 0.5>| ≠ 1 must be rejected.
+        #expect(Engine.evaluate([#"\hat u = <0.5, 0.5>"#])[0].errorMessage?.contains("unit vector") == true)
+        #expect(Engine.evaluate([#"\hat u = unit(<0.5, 0.5>)"#])[0].errorMessage == nil)
+        #expect(Engine.evaluate([#"\hat u = i"#])[0].errorMessage == nil)
+        #expect(Engine.evaluate([#"\hat u = 5"#])[0].errorMessage != nil)
+    }
+
     /// Enter-to-render commits the pretty text as the real source, so every
     /// pretty form must evaluate identically to what the user typed.
     @Test func mathPrintRoundTripsThroughParser() {
         let corpus = [
-            "a = <1, 2, 3>",
-            "F = 260 * unit(<1, 2, 2>)",
-            "T = 50 @ 30",
+            #"\vec a = <1, 2, 3>"#,
+            #"\vec F = 260 * unit(<1, 2, 2>)"#,
+            #"\vec T = 50 @ 30"#,
             #"\vec G = 3i + 4j - 5k"#,
             #"\hat u = unit(<3, 4, 0>)"#,
             "m = sqrt(16) + 2 pi",
             "d = <1, 2, 3> * <4, -5, 6>",
-            "c = cross(i, j) × k",
+            #"\vec c = cross(i, j) × k"#,
             "theta = 30",
             "point A = (1, 2, 3)",
         ]
@@ -184,14 +204,14 @@ import Testing
     }
 
     @Test func commentsAndBlanks() throws {
-        let outcomes = Engine.evaluate(["# hello", "", "a = <1,1,1>"])
+        let outcomes = Engine.evaluate(["# hello", "", "vec a = <1,1,1>"])
         #expect(outcomes[0].status == .comment)
         #expect(outcomes[1].status == .blank)
         #expect(outcomes[2].status == .ok)
     }
 
     @Test func errorsDoNotStopEvaluation() throws {
-        let outcomes = Engine.evaluate(["a = <1,2,3>", "garbage )( here", "a * a"])
+        let outcomes = Engine.evaluate(["vec a = <1,2,3>", "garbage )( here", "a * a"])
         #expect(outcomes[1].errorMessage != nil)
         #expect(outcomes[2].status == .ok)
         #expect(outcomes[2].resultText == "14")

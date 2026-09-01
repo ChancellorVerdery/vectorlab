@@ -13,8 +13,8 @@ import Testing
             "point A = (0, 0, 12)",
             "point B = (4, -3, 0)",
             "r_AB",
-            "F = 260 * unit(r_AB)",
-            "M_O = moment(r_OA, F)",
+            "\\vec F = 260 * unit(r_AB)",
+            "\\vec M_O = moment(r_OA, F)",
         ]
         let outcomes = Engine.evaluate(lines)
         #expect(outcomes.allSatisfy { $0.errorMessage == nil })
@@ -73,11 +73,11 @@ import Testing
             "point A = (0, 0, 12)",
             "point B = (4, -3, 0)",
             "r_AB",
-            "F = 260 * unit(r_AB)",
-            "M_O = moment(r_OA, F)",
+            "\\vec F = 260 * unit(r_AB)",
+            "\\vec M_O = moment(r_OA, F)",
             "angle(F, r_OA)",
             "",
-            "# Try: a = <1,2,3>   b = 2i - j   a*b   cross(a,b)   T = 50∠30",
+            "# Try: \\vec a = <1,2,3>   \\hat u = unit(a)   a*û   cross(a, û)   \\vec T = 50∠30",
         ]
         let outcomes = Engine.evaluate(lines)
         #expect(outcomes.allSatisfy { $0.errorMessage == nil })

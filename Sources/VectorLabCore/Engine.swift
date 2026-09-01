@@ -51,8 +51,11 @@ public struct LineOutcome: Equatable, Sendable {
 public enum Engine {
     /// Evaluates all lines top to bottom against a fresh environment.
     /// Never throws: bad lines produce .error outcomes and evaluation continues.
-    public static func evaluate(_ lines: [String]) -> [LineOutcome] {
+    /// strictNotation (the default) requires \vec marks on vector definitions
+    /// and true unit magnitude for hatted names — the app's teaching mode.
+    public static func evaluate(_ lines: [String], strictNotation: Bool = true) -> [LineOutcome] {
         var evaluator = Evaluator()
+        evaluator.strictNotation = strictNotation
         return lines.map { line in
             do {
                 let stmt = try Parser.parseLine(line)
@@ -101,7 +104,7 @@ public enum Engine {
         let expr: Expr
         switch stmt {
         case .expression(let e): expr = e
-        case .definition(_, _, let e): expr = e
+        case .definition(_, _, _, let e): expr = e
         default: return nil
         }
         guard case .call(let fn, let args) = expr, fn.lowercased() == "angle", args.count == 2,

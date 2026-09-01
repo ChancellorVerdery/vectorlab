@@ -18,12 +18,12 @@ struct NotebookView: View {
                         focusedEntry = newID
                     },
                     onCycleColor: { model.cycleColor(entry.id) },
-                    onDelete: { model.remove(entry.id) }
+                    onDelete: { model.remove(entry.id) },
+                    onMove: { delta in model.move(entry.id, by: delta) }
                 )
             }
-            .onMove { from, to in
-                model.entries.move(fromOffsets: from, toOffset: to)
-            }
+            // ponytail: no .onMove — row-wide drag reordering swallowed clicks
+            // meant for the text field; reorder lives in the context menu
 
             Button("New line", systemImage: "plus") {
                 focusedEntry = model.addEntry()
@@ -44,6 +44,7 @@ private struct EntryRow: View {
     let onSubmit: () -> Void
     let onCycleColor: () -> Void
     let onDelete: () -> Void
+    let onMove: (Int) -> Void
 
     @State private var hovering = false
 
@@ -59,19 +60,20 @@ private struct EntryRow: View {
             .opacity(isDrawable ? 1 : 0.25)
 
             VStack(alignment: .leading, spacing: 1) {
-                // ponytail: raw TextField when focused, MathPrint Text otherwise;
-                // unfocused rows aren't Tab-reachable — click to edit
-                if showsRawText {
+                // The TextField is always present (invisible under the rendered
+                // math) so a click anywhere in the row focuses it natively —
+                // reliable focus, caret at the click point, Tab still works.
+                ZStack(alignment: .leading) {
                     TextField("type a vector, point, or expression…", text: $entry.text)
                         .textFieldStyle(.plain)
                         .font(.system(.body, design: .monospaced))
                         .focused(focus, equals: entry.id)
                         .onSubmit(renderOrSubmit)
-                } else {
-                    prettyText
-                        .contentShape(Rectangle())
-                        .onTapGesture { focus.wrappedValue = entry.id }
-                        .accessibilityHint("Tap to edit")
+                        .opacity(showsRawText ? 1 : 0)
+                    if !showsRawText {
+                        prettyText
+                            .allowsHitTesting(false)
+                    }
                 }
 
                 if let outcome {
@@ -111,6 +113,9 @@ private struct EntryRow: View {
         .padding(.vertical, 2)
         .onHover { hovering = $0 }
         .contextMenu {
+            Button("Move up", systemImage: "arrow.up") { onMove(-1) }
+            Button("Move down", systemImage: "arrow.down") { onMove(1) }
+            Divider()
             Button("Delete line", role: .destructive, action: onDelete)
         }
     }
@@ -133,6 +138,10 @@ private struct EntryRow: View {
         let pretty = MathPrint.pretty(entry.text)
         if !isComment, pretty != entry.text {
             entry.text = pretty
+            // macOS can drop first responder when the text changes underneath
+            // it — re-assert focus so the first Return keeps you in the field.
+            let id = entry.id
+            DispatchQueue.main.async { focus.wrappedValue = id }
         } else {
             onSubmit()
         }

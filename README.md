@@ -14,13 +14,13 @@ inline; vectors and points draw in the scene.
 ## Notation
 
 ```
-a = <1, 2, 3>              vector  (also [1,2,3], (1,2,3), ⟨1,2,3⟩, \langle…\rangle)
-\vec F = 3i + 4j - 5k      component form
-F = cos(30)i + sin(30)j    calls multiply into i j k implicitly
+\vec a = <1, 2, 3>         vector — the \vec mark (or typed arrow a⃗) is required
+\vec F = cos(30)i + sin(30)j   component form; calls multiply into i j k implicitly
 point A = (0, 0, 4)        point, drawn as a dot
 r_AB                       B − A once points A and B exist (drawn from A)
-\hat u = unit(F)           defines û, a variable distinct from u (also \hat(u), \hat{u})
-T = 50∠30                  2D polar: magnitude ∠ angle in degrees (also 50 @ 30)
+\hat u = unit(F)           defines û, distinct from u — must be a true unit vector
+\vec T = 50∠30             2D polar: magnitude ∠ angle in degrees (also 50 @ 30)
+m = 12.5                   scalars use plain names
 # heading                  comment line
 
 a + b   a - b   2*a        arithmetic
@@ -39,7 +39,9 @@ sqrt ln log exp pi e       scalar math;  rad(x) / deg(x) convert
 ```
 
 Conventions: z is up (statics style), trig is in degrees, `i j k π e origin`
-are reserved. The notebook re-evaluates top-to-bottom on every edit and
+are reserved. Strict notation is enforced as a teaching aid: a definition
+holding a vector needs the `\vec`/arrow mark, and a hatted name (û) must
+have magnitude 1 — the error messages show the correct form. The notebook re-evaluates top-to-bottom on every edit and
 autosaves to `~/Library/Application Support/VectorLab/workspace.json`.
 While editing, press Return once to render your notation as math in place
 (\hat u → û, \vec F → F⃗, < > → ⟨ ⟩); press Return again to finish the line.

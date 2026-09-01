@@ -20,7 +20,7 @@ struct RichEntryField: View {
     // ponytail: calibration knobs — overlay alignment over TextEditor's
     // internal insets; tweak if arrows sit off their names
     private static let textLeadingInset: CGFloat = 5
-    private static let arrowTopOffset: CGFloat = 2
+    private static let arrowTopOffset: CGFloat = 0
 
     var body: some View {
         TextEditor(text: $rich)

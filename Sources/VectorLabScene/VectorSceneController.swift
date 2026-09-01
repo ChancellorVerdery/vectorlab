@@ -344,7 +344,7 @@ public final class VectorSceneController {
         if vectorMark {
             // Full-width arrow over the name — proper vector notation.
             let width = CGFloat(maxB.x - minB.x)
-            let y = CGFloat(maxB.y) + 0.16
+            let y = CGFloat(maxB.y) + 0.3
             let barMaterial = material(color, constant: true)
             barMaterial.readsFromDepthBuffer = false
 

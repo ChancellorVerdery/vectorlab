@@ -21,7 +21,7 @@ struct RichEntryField: View {
     // ponytail: calibration knobs — overlay alignment over TextEditor's
     // internal insets; tweak if arrows sit off their names
     private static let textLeadingInset: CGFloat = 5
-    private static let arrowTopOffset: CGFloat = 0
+    private static let arrowTopOffset: CGFloat = -2   // capitals reach higher than lowercase
 
     var body: some View {
         TextEditor(text: $rich)
@@ -277,27 +277,33 @@ struct RichEntryField: View {
     }
 }
 
-/// The unit-vector hat: a centered ^ over the name.
+/// The unit-vector hat: a centered ^ over the name, no wider than the name.
 private struct HatShape: Shape {
     func path(in rect: CGRect) -> Path {
+        let half = min(4, rect.width * 0.45)
         var p = Path()
-        p.move(to: CGPoint(x: rect.midX - 4, y: rect.maxY - 1))
+        p.move(to: CGPoint(x: rect.midX - half, y: rect.maxY - 1))
         p.addLine(to: CGPoint(x: rect.midX, y: rect.minY + 1))
-        p.addLine(to: CGPoint(x: rect.midX + 4, y: rect.maxY - 1))
+        p.addLine(to: CGPoint(x: rect.midX + half, y: rect.maxY - 1))
         return p
     }
 }
 
-/// The over-name arrow: a line with an open head at the right.
+/// The over-name arrow: a line with an open head at the right. The head
+/// scales with span width so one-letter names (B, T, F) get a small neat
+/// head instead of a chevron half the arrow's length.
 private struct VecArrowShape: Shape {
     func path(in rect: CGRect) -> Path {
+        let head = min(3, rect.width * 0.32)
+        let barb = head * 0.7
         var p = Path()
         let y = rect.midY
+        let tip = rect.maxX - 0.5
         p.move(to: CGPoint(x: rect.minX, y: y))
-        p.addLine(to: CGPoint(x: rect.maxX - 1, y: y))
-        p.move(to: CGPoint(x: rect.maxX - 4, y: y - 2.4))
-        p.addLine(to: CGPoint(x: rect.maxX - 1, y: y))
-        p.addLine(to: CGPoint(x: rect.maxX - 4, y: y + 2.4))
+        p.addLine(to: CGPoint(x: tip, y: y))
+        p.move(to: CGPoint(x: tip - head, y: y - barb))
+        p.addLine(to: CGPoint(x: tip, y: y))
+        p.addLine(to: CGPoint(x: tip - head, y: y + barb))
         return p
     }
 }

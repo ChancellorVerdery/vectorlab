@@ -27,6 +27,14 @@ enum Lexer {
     /// ASCII digits only — Unicode numerals like ² or ½ must error, not lex.
     private static func isDigit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
 
+    /// True when the grapheme carries a circumflex — û precomposed or k̂
+    /// (k + combining hat). Decompose first: contains() on the composed
+    /// string can't see the mark.
+    static func hasHat(_ c: Character) -> Bool {
+        String(c).decomposedStringWithCanonicalMapping.unicodeScalars
+            .contains { $0.value == 0x0302 }
+    }
+
     /// Identifier characters: ASCII letters/digits/underscore, subscript
     /// digits (F₁ ≡ F_1), plus any letter-initial grapheme so û, θ, and F⃗
     /// (letter + combining mark) work — including digits carrying marks (1⃗).
@@ -60,9 +68,21 @@ enum Lexer {
         }
 
         func scanIdent() -> (name: String, hadArrow: Bool) {
+            // A hatted letter is a standalone symbol: Rû is two names (so
+            // juxtaposition can multiply), and ûx is û then x — but a
+            // subscript tail stays attached (û₁, û_AB are single names).
             var s = ""
-            while i < chars.count, isIdentChar(chars[i]) {
+            if i < chars.count, hasHat(chars[i]) {
                 s.append(chars[i]); i += 1
+                if i < chars.count, chars[i] == "_" || MathPrint.subscriptToPlain[chars[i]] != nil {
+                    while i < chars.count, isIdentChar(chars[i]), !hasHat(chars[i]) {
+                        s.append(chars[i]); i += 1
+                    }
+                }
+            } else {
+                while i < chars.count, isIdentChar(chars[i]), !hasHat(chars[i]) {
+                    s.append(chars[i]); i += 1
+                }
             }
             // Subscript digits are the same name as their _n spelling: F₁ ≡ F_1.
             var normalized = ""

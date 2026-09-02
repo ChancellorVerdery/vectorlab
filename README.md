@@ -24,6 +24,7 @@ m = 12.5                   scalars use plain names
 # heading                  comment line
 
 a + b   a - b   2*a        arithmetic
+r = Rû                     hatted symbols juxtapose: R·û  (û finds u when |u| = 1)
 a * b   a · b   dot(a,b)   dot product
 a × b   cross(a,b)         cross product
 |a|     mag(a)             magnitude

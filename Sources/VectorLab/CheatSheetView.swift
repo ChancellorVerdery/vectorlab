@@ -16,6 +16,7 @@ struct CheatSheetView: View {
         ]),
         ("Operate", [
             ("a + b,  a - b,  2*a", "add, subtract, scale"),
+            ("Rû,  5î", "juxtaposition multiplies — û refers to u when |u| = 1"),
             ("a * b   or   a · b", "dot product"),
             ("cross(a, b)  or  a × b", "cross product"),
             ("|a|   or   mag(a)", "magnitude"),

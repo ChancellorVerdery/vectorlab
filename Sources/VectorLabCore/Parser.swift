@@ -61,7 +61,9 @@ struct Parser {
                 }
                 j += 1
             }
-            out.append(.ident((n + "\u{0302}").precomposedStringWithCanonicalMapping))
+            // Hat goes on the first letter: \hat u_1 is û_1, not u_1̂.
+            let hatted = String(n.prefix(1)) + "\u{0302}" + n.dropFirst()
+            out.append(.ident(hatted.precomposedStringWithCanonicalMapping))
             i = j
         }
         return out
@@ -169,7 +171,8 @@ struct Parser {
             default:
                 // ponytail: juxtaposition multiplies only after a number or `)`
                 // (3i, 2x, cos(t)i); ident chains like `2 pi r` need explicit `*`
-                if startsImplicitFactor(t), previousTokenAllowsImplicitMul() {
+                // — except a hatted symbol after a name: Rû reads R·û.
+                if startsImplicitFactor(t), previousTokenAllowsImplicitMul() || hattedAfterIdent(t) {
                     op = .mul
                 } else {
                     break loop
@@ -200,6 +203,14 @@ struct Parser {
     private func isIdentToken(_ t: Token) -> Bool {
         if case .ident = t { return true }
         return false
+    }
+
+    /// Rû, xî: a hatted unit-vector symbol juxtaposed after a plain name
+    /// multiplies — the hat makes the boundary visually unambiguous.
+    private func hattedAfterIdent(_ t: Token) -> Bool {
+        guard case .ident(let n) = t, let first = n.first, Lexer.hasHat(first) else { return false }
+        guard i > 0, case .ident = tokens[i - 1] else { return false }
+        return true
     }
 
     private mutating func unary() throws -> Expr {

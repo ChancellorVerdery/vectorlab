@@ -146,6 +146,15 @@ struct Evaluator {
         if Self.functionNames.contains(name.lowercased()) {
             throw EvalError("'\(name)' is a function — call it like \(name)(…)")
         }
+        // The app hats unit vectors automatically, so a defined `u` is
+        // DISPLAYED as û — typing û back must find it (if truly unit).
+        let base = name.decomposedStringWithCanonicalMapping
+            .replacingOccurrences(of: "\u{0302}", with: "")
+            .precomposedStringWithCanonicalMapping
+        if base != name, let v = env[base] {
+            if case .vector(let vec, _) = v, abs(vec.length - 1) <= 1e-6 { return v }
+            throw EvalError("'\(name)' is the unit-vector form of \(base), but \(base) is not a unit vector")
+        }
         throw EvalError("'\(name)' is not defined")
     }
 

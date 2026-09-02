@@ -30,6 +30,22 @@ import Testing
         #expect(outcomes.allSatisfy { $0.errorMessage == nil })
     }
 
+    @Test func hattedReferenceToAutoUnitVector() throws {
+        // Exact user scenario: u renders as û (auto hat), so typing û back
+        // must resolve to u, and Rû juxtaposes scalar · unit vector.
+        expectApprox(try vector("θ=30", "R=5", "u=-sin(θ)i+cos(θ)j", "r_OA=Rû"),
+                     Vec3(-2.5, 5 * 3.0.squareRoot() / 2, 0))
+        // Hatted symbols split from neighboring letters: Rî ≡ R·î.
+        expectApprox(try vector("R = 3", "Rî + Rĵ"), Vec3(3, 3, 0))
+        // Subscript tails stay attached to a hatted name.
+        expectApprox(try scalar(#"\hat u_1 = j"#, "û_1.y"), 1)
+        // û only stands in for u when u truly is unit.
+        let bad = Engine.evaluate(["u = <1, 1, 0>", "a = 2û"])
+        #expect(bad[1].errorMessage?.contains("unit") == true)
+        // An explicitly defined û still wins over the fallback.
+        expectApprox(try scalar("u = <9, 9, 9>", "û = i", "v = 2û", "v.x"), 2)
+    }
+
     @Test func implicitMultiplyAfterCloseParen() throws {
         expectApprox(try vector("theta = 30", "F = cos(theta)i + sin(theta)j"),
                      Vec3(3.0.squareRoot() / 2, 0.5, 0), tolerance: 1e-12)

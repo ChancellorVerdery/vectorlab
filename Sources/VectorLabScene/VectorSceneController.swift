@@ -62,14 +62,34 @@ public final class VectorSceneController {
 
     private func s(_ v: Vec3) -> SCNVector3 { SCNVector3(v.y, v.z, v.x) }
 
+    /// SceneKit keeps node transforms as 32-bit floats, so ANY coordinate past
+    /// Float.greatestFiniteMagnitude (~3.4e38) reads back as ∞ however good the
+    /// Double we hand it was — ∞ positions, ∞ shaft heights, NaN orientations.
+    ///
+    /// Pass 1 shut this off for arrows with `length.isFinite`, but that only
+    /// worked by accident: |<1e200, 1e200, 0>| itself overflowed to ∞ first.
+    /// With an overflow-safe Vec3.length that length is now a real 1.4e200, so
+    /// the arrow sailed past the guard and rebuilt the infinite geometry. The
+    /// bound the renderer actually has is stated here instead of relied upon.
+    private static let maxRenderable = Double(Float.greatestFiniteMagnitude)
+
+    private static func isRenderable(_ v: Vec3) -> Bool {
+        v.isFinite && v.maxAbsComponent <= maxRenderable
+    }
+
     // MARK: - Content
 
     public func update(items: [ColoredDrawable], arcs: [ColoredArc], showAxes: Bool, showGrid: Bool,
                        showArrowheads: Bool = true) {
         var maxCoord = 2.0
+        // Only geometry that will actually be DRAWN may grow the viewport.
+        // `isFinite` alone let a point at 1e200 — finite, so Engine.drawable
+        // emits it — pin extent to its 1000 cap while pointNode declined to
+        // draw it: axes 1000 units long, nothing at the far end, and the
+        // user's real <3, 4, 0> vector shrunk to invisibility. isRenderable is
+        // the same predicate the node builders use.
         func fold(_ v: Vec3) {
-            let c = v.maxAbsComponent
-            if c.isFinite { maxCoord = max(maxCoord, c) }
+            if Self.isRenderable(v) { maxCoord = max(maxCoord, v.maxAbsComponent) }
         }
         for item in items {
             switch item.drawable.shape {
@@ -79,6 +99,12 @@ public final class VectorSceneController {
             case .point(let p):
                 fold(p)
             }
+        }
+        // Arcs were left out entirely, so an arc anchored further out than
+        // every arrow was drawn outside the axes. Its radius is already capped
+        // by extent, so the origin is the whole reach.
+        for colored in arcs {
+            fold(colored.arc.origin)
         }
         // Axes: 5 units minimum, exactly 20% beyond the largest component,
         // identical length on x, y, z. Capped at 1000 — keeps Int(extent)
@@ -214,6 +240,39 @@ public final class VectorSceneController {
 
     private var labelScale: Double { max(0.15, extent * 0.028) }
 
+    /// The one vertical datum every label is placed against: the baseline and
+    /// cap top of this font at the size `attributedLabel` uses.
+    ///
+    /// `makeLabel` used to pivot each label on the midpoint of ITS OWN ink box
+    /// and hang the arrow/hat mark off ITS OWN ink top. Both quantities depend
+    /// on which glyphs the name happens to contain, so a label's height above
+    /// its anchor point was a function of its spelling. Measured pivot y, one
+    /// label each: `F` 1.3523, `j` 1.3195, `r_AB` 1.2744, `y` 1.1714 — a spread
+    /// of 0.18 text units, about a quarter of a cap height, between names that
+    /// are drawn at the same size on the same point. The axis labels show it
+    /// plainly: `x` has no descender and `y` does, so the two ticks of a pair
+    /// sat at different heights. Marks drifted the same way, riding 0.26 lower
+    /// over `r_AB` (ink top 1.5487) than over `j` (1.8084).
+    ///
+    /// Text shares a baseline; it does not share a bounding-box centre. So both
+    /// now measure one reference capital instead. `F` has no descender and no
+    /// ascender above the cap line, so its ink bottom IS the baseline and its
+    /// ink top IS the cap height — a constant of the font, not of the string.
+    ///
+    /// This is a real move: every label whose glyphs are not exactly cap-band
+    /// shifts. `F` itself does not move by a single bit, because for a lone
+    /// capital the new datum IS the old ink box, and that is the point — the
+    /// change aligns the others TO the ordinary case rather than relocating it.
+    ///
+    /// Horizontal placement is untouched: centring on the ink box is correct
+    /// for x, where the whole string's extent is what should be centred.
+    private static let labelDatum: (baseline: CGFloat, capTop: CGFloat) = {
+        let probe = SCNText(string: attributedLabel("F"), extrusionDepth: 0)
+        probe.flatness = 0.05
+        let (lo, hi) = probe.boundingBox
+        return (CGFloat(lo.y), CGFloat(hi.y))
+    }()
+
     private func registerScalable(_ node: SCNNode, radial: Bool, base: Double = 1, axes: Bool = false) {
         if axes {
             axesScalables.append(Scalable(node: node, radial: radial, base: base))
@@ -245,10 +304,17 @@ public final class VectorSceneController {
 
     private func arrowNode(tail: Vec3, vec: Vec3, color: NSColor, label: String?, showHead: Bool) -> SCNNode {
         let node = SCNNode()
+        // An unrenderable tail cannot be placed at all — anywhere we put it is
+        // ∞ — so the whole arrow is dropped rather than drawn in the wrong spot.
+        guard Self.isRenderable(tail) else { return node }
         node.position = s(tail)
         let length = vec.length
 
-        guard length > 1e-9, let dir = vec.normalized else {
+        // Beyond Float range the shaft height and tip position come back ∞;
+        // see maxRenderable. Values this large already clipped out of the
+        // scene, so nothing that was previously visible stops being drawn.
+        guard length > 1e-9, length <= Self.maxRenderable, Self.isRenderable(vec),
+              let dir = vec.normalized else {
             // Zero vector: a small marker at the tail so M = 0 still shows up.
             let g = SCNSphere(radius: 0.03 * labelScale + 0.03)
             g.materials = [material(color)]
@@ -305,6 +371,8 @@ public final class VectorSceneController {
 
     private func pointNode(at p: Vec3, color: NSColor, label: String?) -> SCNNode {
         let node = SCNNode()
+        // Same Float bound as arrows: a point at 1e200 reads back at ∞.
+        guard Self.isRenderable(p) else { return node }
         node.position = s(p)
         let g = SCNSphere(radius: 0.009 * extent + 0.02)
         g.segmentCount = 24
@@ -326,10 +394,28 @@ public final class VectorSceneController {
     /// points, axis labels, and labels already placed this rebuild.
     private var labelObstacles: [(pos: Vec3, radius: Double)] = []
 
-    /// _AB in a name typesets as a true subscript (smaller, lowered, no
-    /// underscore) — the editable text can't do this (Unicode has no capital
-    /// subscript letters), but attributed SCNText can.
-    private func attributedLabel(_ string: String) -> NSAttributedString {
+    /// `_AB` in a name typesets as a subscript: smaller, no underscore. The
+    /// editable text can't do this at all (Unicode has no capital subscript
+    /// letters), but an attributed SCNText can size a run.
+    ///
+    /// It CANNOT lower one. This carried `.baselineOffset: -0.22` from the day
+    /// it was written; the attribute never did anything. SCNText lays every run
+    /// of an attributed string on one baseline and ignores all four vertical
+    /// mechanisms — `NSBaselineOffset`, CoreText's own `CTBaselineOffset` key,
+    /// `CTSuperscript`, and a translating font matrix. Measured: `F` + a 0.62
+    /// run reading `1` occupies y = [1.0000, 1.7046] with the offset, without
+    /// it, and at every offset from 0 to -0.5. See Pass15Tests, which pins the
+    /// no-op so that if SceneKit ever gains the support the pin fails loudly
+    /// and a real lowered subscript can be put back.
+    ///
+    /// The output is nonetheless right, because this font's own designed
+    /// subscript glyph also sits on the baseline: `₁` alone measures
+    /// y = [1.0005, 1.4082] and w = 0.3164, against y = [1.0000, 1.4368] and
+    /// w = 0.3106 for the 0.62 run. The eyeballed 0.62 lands within 2% of the
+    /// font's subscript on width and 7% on height — and no single size can hit
+    /// both, since those two targets disagree with each other by more than 0.62
+    /// misses either. So 0.62 stays; it was measured, not merely kept.
+    private static func attributedLabel(_ string: String) -> NSAttributedString {
         let base = NSFont.monospacedSystemFont(ofSize: 1, weight: .semibold)
         let small = NSFont.monospacedSystemFont(ofSize: 0.62, weight: .semibold)
         let result = NSMutableAttributedString()
@@ -343,9 +429,7 @@ public final class VectorSceneController {
                     j = string.index(after: j)
                 }
                 if !run.isEmpty {
-                    result.append(NSAttributedString(
-                        string: run,
-                        attributes: [.font: small, .baselineOffset: -0.22]))
+                    result.append(NSAttributedString(string: run, attributes: [.font: small]))
                     idx = j
                     continue
                 }
@@ -361,9 +445,54 @@ public final class VectorSceneController {
         case hat     // centered ^ for unit vectors
     }
 
+    /// `SCNText.boundingBox` does not always answer with a measurement. When
+    /// the geometry has no laid-out glyphs it returns SceneKit's empty-box
+    /// sentinel — `(+inf, -inf)`, the identity element for box union, not a
+    /// size. Pass 16 caught it on a re-read and could not say whether
+    /// `makeLabel`'s own read was exposed. Pass 17 measured it:
+    ///
+    /// - It happens to ORDINARY NAMES. `A` read back as the sentinel on 40 of
+    ///   40 fresh reads, `r_AB` on 37–40 of 40 — and `r_AB` is in the app's own
+    ///   sample notebook.
+    /// - It happens at EVERY construction stage `makeLabel` performs. Fresh
+    ///   text, materials assigned, node attached, both: all four stages read
+    ///   the sentinel for the same two names.
+    /// - It is STICKY per object. A sentinel read stays a sentinel; nothing
+    ///   done afterwards recovered one (0 of 18).
+    /// - It is not a race. `SCNText` is main-actor isolated and non-Sendable,
+    ///   so the app cannot lay out two of these concurrently.
+    /// - It is not the empty string, which measures an honest `(0, 0)`.
+    ///
+    /// See `Pass17Tests.recordWhichNamesReadBackAsTheSentinel` and
+    /// `recordWhichConstructionStepMakesTheBoxReadable` for the raw numbers.
+    ///
+    /// The old code used the read raw: `(minB.x + maxB.x) / 2` is
+    /// `(+inf + -inf) / 2` — NaN. A NaN pivot is not a label in the wrong place,
+    /// it is a node with no transform, and nothing downstream checks for it.
+    /// The vertical half of the same problem was closed in pass 16 by moving
+    /// the datum into a `static let`; this is the other half.
+    ///
+    /// A finite box is returned unchanged, so every label whose box reads
+    /// cleanly keeps the coordinates it has always had, bit for bit. Otherwise
+    /// CoreText's typographic advance stands in: it comes from the text system
+    /// rather than SceneKit's geometry builder, so it cannot be the sentinel.
+    /// It is a DIFFERENT number, not a substitute — the advance is the
+    /// monospace cell and the ink box is the glyph inside it, so it runs from
+    /// 1.00x (`W`, which fills its cell) to 1.68x (`j`). For `A` it is 1.04x.
+    /// That is why it is a fallback: it keeps a label finite and near-centred,
+    /// it does not reproduce the measurement. See
+    /// `Pass17Tests.theTypographicAdvanceBoundsTheInkBox`.
+    private static func inkSpanX(_ text: SCNText,
+                                 of attributed: NSAttributedString) -> (min: CGFloat, max: CGFloat) {
+        let (lo, hi) = text.boundingBox
+        if lo.x.isFinite, hi.x.isFinite, hi.x >= lo.x { return (lo.x, hi.x) }
+        return (0, attributed.size().width)
+    }
+
     private func makeLabel(_ string: String, color: NSColor, axes: Bool = false,
                            mark: LabelMark? = nil) -> (node: SCNNode, halfWidth: Double) {
-        let text = SCNText(string: attributedLabel(string), extrusionDepth: 0)
+        let attributed = Self.attributedLabel(string)
+        let text = SCNText(string: attributed, extrusionDepth: 0)
         text.flatness = 0.05
         let m = material(color, constant: true)
         m.readsFromDepthBuffer = false   // labels draw on top, never inside geometry
@@ -375,34 +504,59 @@ public final class VectorSceneController {
         node.scale = SCNVector3(scale, scale, scale)
         registerScalable(node, radial: false, base: scale, axes: axes)
 
-        // Center the text on its position.
-        let (minB, maxB) = text.boundingBox
-        node.pivot = SCNMatrix4MakeTranslation((minB.x + maxB.x) / 2, (minB.y + maxB.y) / 2, 0)
+        // Centre horizontally on the ink box; vertically on the font's cap
+        // band, so every label sits at one height regardless of its glyphs.
+        let spanX = Self.inkSpanX(text, of: attributed)
+        let datum = Self.labelDatum
+        node.pivot = SCNMatrix4MakeTranslation(
+            (spanX.min + spanX.max) / 2, (datum.baseline + datum.capTop) / 2, 0)
         node.constraints = [SCNBillboardConstraint()]
 
         if let mark {
-            let width = CGFloat(maxB.x - minB.x)
-            let y = CGFloat(maxB.y) + 0.3
-            let cx = CGFloat(minB.x + maxB.x) / 2
+            let width = spanX.max - spanX.min
+            let y = Self.labelDatum.capTop + 0.3
+            let cx = (spanX.min + spanX.max) / 2
             let markMaterial = material(color, constant: true)
             markMaterial.readsFromDepthBuffer = false
 
             switch mark {
             case .arrow:
                 // Full-width arrow over the name — proper vector notation.
-                let bar = SCNBox(width: max(0.2, width - 0.14), height: 0.05, length: 0.01, chamferRadius: 0)
+                //
+                // Bar and head are ONE stroke, so both come from one span. They
+                // used to be sized and placed independently: the bar was BUILT
+                // `max(0.2, width - 0.14)` wide but POSITIONED as if it were
+                // `width - 0.14` wide. Those agree only while the clamp is
+                // asleep. When it fires the bar keeps the unclamped centre and
+                // overruns the head by exactly the clamp's excess — the two
+                // stop being one arrow. A minimum width should widen the whole
+                // mark, not desynchronise half of it.
+                //
+                // Reachable only for a name narrower than 0.34 in text units,
+                // which in this monospaced font means no letter and no digit —
+                // see Pass14Tests.recordMeasuredLabelWidths. Latent, therefore,
+                // but wrong: for every name at or above that width the span IS
+                // the width and both nodes land on exactly the coordinates they
+                // always had, bit for bit.
+                let headLength: CGFloat = 0.14
+                let minBar: CGFloat = 0.2
+                let span = max(headLength + minBar, width)
+                let left = cx - span / 2
+                let barWidth = span - headLength
+
+                let bar = SCNBox(width: barWidth, height: 0.05, length: 0.01, chamferRadius: 0)
                 bar.materials = [markMaterial]
                 let barNode = SCNNode(geometry: bar)
                 barNode.renderingOrder = 100
-                barNode.position = SCNVector3(CGFloat(minB.x) + (width - 0.14) / 2, y, 0)
+                barNode.position = SCNVector3(left + barWidth / 2, y, 0)
                 node.addChildNode(barNode)
 
-                let head = SCNPyramid(width: 0.14, height: 0.14, length: 0.01)
+                let head = SCNPyramid(width: headLength, height: headLength, length: 0.01)
                 head.materials = [markMaterial]
                 let headNode = SCNNode(geometry: head)
                 headNode.renderingOrder = 100
                 headNode.eulerAngles.z = -.pi / 2   // apex points +x
-                headNode.position = SCNVector3(CGFloat(maxB.x) - 0.07, y, 0)
+                headNode.position = SCNVector3(left + span - headLength / 2, y, 0)
                 node.addChildNode(headNode)
 
             case .hat:
@@ -412,13 +566,21 @@ public final class VectorSceneController {
                     bar.materials = [markMaterial]
                     let barNode = SCNNode(geometry: bar)
                     barNode.renderingOrder = 100
-                    barNode.eulerAngles.z = CGFloat(side) * 0.65
+                    // NEGATIVE side: a caret's arms RISE toward the middle.
+                    // With +side the left arm (side = -1) was rotated clockwise
+                    // and the right arm counter-clockwise, so both inner ends
+                    // went DOWN and the mark rendered as a v. Measured before
+                    // the fix: inner ends at y 1.7560, outer ends at y 1.9133 —
+                    // the apex was 0.157 BELOW the tips. Every unit vector in
+                    // the app wears this mark, and thirteen passes never asked
+                    // which way up it was.
+                    barNode.eulerAngles.z = CGFloat(-side) * 0.65
                     barNode.position = SCNVector3(cx + CGFloat(side) * 0.1, y, 0)
                     node.addChildNode(barNode)
                 }
             }
         }
-        return (node, Double(maxB.x - minB.x) / 2 * scale)
+        return (node, Double(spanX.max - spanX.min) / 2 * scale)
     }
 
     /// Adds a content label at `desired`, nudged along `escape` until it
@@ -442,6 +604,14 @@ public final class VectorSceneController {
     }
 
     private func arcNode(_ arc: ArcSpec, color: NSColor) -> SCNNode? {
+        // Same 32-bit vertex bound arrows and points already respect. Every arc
+        // vertex is `origin + radius * unit`, so a non-renderable origin puts all
+        // 33 of them at ∞ no matter how small the radius is; a non-renderable leg
+        // makes the two basis directions NaN. Arc origins come from a shared point
+        // anchor, so `point A = (1e200, 0, 0)` reaches here directly.
+        guard Self.isRenderable(arc.origin), Self.isRenderable(arc.from),
+              Self.isRenderable(arc.to), arc.degrees.isFinite
+        else { return nil }
         guard let ua = arc.from.normalized else { return nil }
         let perp = arc.to - arc.to.dot(ua) * ua
         guard let w = perp.normalized else { return nil }   // parallel vectors: no arc

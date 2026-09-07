@@ -341,10 +341,15 @@ import Testing
         #expect(outcomes[0].drawable == nil)
     }
 
+    /// Pass 3 replaced the "full digit string" this used to pin: 1e305 printed
+    /// as 305 characters starting "99999999…" — the exact binary expansion,
+    /// digits the value does not carry. Now scientific, still never "inf".
     @Test func hugeFiniteNumbersFormatWithoutInf() throws {
         let s = Fmt.num(1e305)
         #expect(!s.contains("inf"))
-        #expect(s.first?.isNumber == true && s.count > 300)   // full digit string
+        #expect(!s.contains("\u{221E}"))
+        #expect(Double(s) == 1e305, "printed \(s)")
+        #expect(s.count <= 16, "printed \(s.count) characters: \(s)")
         expectApprox(try scalar("10^305"), 1e305, tolerance: 1e290)
     }
 

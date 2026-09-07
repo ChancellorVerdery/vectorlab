@@ -27,6 +27,20 @@ enum Statement: Equatable {
 struct Parser {
     private let tokens: [Token]
     private var i = 0
+    private var depth = 0
+
+    /// Every recursive descent — parens, brackets, |…|, call arguments and
+    /// unary runs — passes through unary(), so one counter there bounds the
+    /// whole grammar. Without it a pasted line of a few thousand '(' overflows
+    /// the stack and kills the app.
+    ///
+    /// 64, not a bigger round number: one nesting level costs about nine stack
+    /// frames (unary → power → postfix → primary → expression → additive →
+    /// multiplicative → polarTerm → unary), and this parser also runs off the
+    /// main thread, where the stack is 512 KB rather than 8 MB. A limit of 256
+    /// still crashed the test runner with SIGBUS. 64 leaves an order of
+    /// magnitude of headroom and is far past anything hand-written.
+    private static let maxDepth = 64
 
     static func parseLine(_ line: String) throws -> Statement {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -90,6 +104,20 @@ struct Parser {
             i += 1
         }
 
+        // \vec(F) = … and \vec{F} = …. \hat has taken all three spellings
+        // since foldHats was written, the lexer maps braces to parens so
+        // "LaTeX braces act as parens", and MathPrint has a rule whose only
+        // job is rewriting \vec{F} — but the parser only ever handled the
+        // bare \vec F. The wrapped name parsed as a parenthesised expression,
+        // which left the '=' behind: "unexpected trailing input near '='".
+        if isVec, peek == .lparen, case .ident(let name) = peek(1) ?? .comma,
+           peek(2) == .rparen, peek(3) == .equals {
+            i += 4
+            let e = try expression()
+            try expectEnd()
+            return .definition(name: name, isPoint: false, isVec: true, expr: e)
+        }
+
         var isPoint = false
         if case .ident("point") = peek ?? .comma,
            case .ident = peek(1) ?? .comma, peek(2) == .equals {
@@ -115,11 +143,34 @@ struct Parser {
         if let t = peek { throw EvalError("unexpected trailing input near \(describe(t))") }
     }
 
+    /// Parse errors quote the token the reader typed. Interpolating the enum
+    /// put its Swift case name on screen instead — "unexpected trailing input
+    /// near 'rangle'" for a stray '>'.
     private func describe(_ t: Token) -> String {
         switch t {
         case .number(let n): return "'\(Fmt.num(n))'"
         case .ident(let s): return "'\(s)'"
-        default: return "'\(t)'"
+        case .vecKeyword: return "'\\vec'"
+        case .hatKeyword: return "'\\hat'"
+        case .plus: return "'+'"
+        case .minus: return "'-'"
+        case .star: return "'*'"
+        case .slash: return "'/'"
+        case .caret: return "'^'"
+        case .equals: return "'='"
+        case .comma: return "','"
+        case .lparen: return "'('"
+        case .rparen: return "')'"
+        case .langle: return "'<'"
+        case .rangle: return "'>'"
+        case .lbracket: return "'['"
+        case .rbracket: return "']'"
+        case .pipe: return "'|'"
+        case .angleOp: return "'∠'"
+        case .dotOp: return "'·'"
+        case .crossOp: return "'×'"
+        case .degree: return "'°'"
+        case .memberDot: return "'.'"
         }
     }
 
@@ -214,6 +265,11 @@ struct Parser {
     }
 
     private mutating func unary() throws -> Expr {
+        depth += 1
+        defer { depth -= 1 }
+        guard depth <= Self.maxDepth else {
+            throw EvalError("expression nested too deeply — split it across lines")
+        }
         if peek == .minus {
             i += 1
             return .unaryMinus(try unary())
@@ -308,7 +364,17 @@ struct Parser {
             return .magnitude(inner)
 
         case .vecKeyword:
-            i += 1   // stray \vec inside an expression: cosmetic
+            // A stray \vec inside an expression is cosmetic — but this is the
+            // one recursive path in the grammar that does NOT pass through
+            // unary(), so it needs its own copy of the depth guard. Bare `vec`
+            // lexes as the same token, and a pasted run of a few thousand
+            // recursed here unbounded and killed the process with SIGBUS.
+            depth += 1
+            defer { depth -= 1 }
+            guard depth <= Self.maxDepth else {
+                throw EvalError("expression nested too deeply — split it across lines")
+            }
+            i += 1
             return try primary()
 
         default:

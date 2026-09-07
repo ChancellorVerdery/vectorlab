@@ -62,6 +62,15 @@ enum Lexer {
                 s.append(chars[i]); i += 1
                 if chars[i] == "+" || chars[i] == "-" { s.append(chars[i]); i += 1 }
                 while i < chars.count, isDigit(chars[i]) { s.append(chars[i]); i += 1 }
+            } else if i < chars.count, chars[i] == "e" || chars[i] == "E",
+                      !(i + 1 < chars.count && isIdentChar(chars[i + 1])) {
+                // A digit run followed by a bare `e` is a truncated exponent,
+                // not multiplication by Euler's number. `\vec F = 1e` read
+                // 2.718 N with no signal at all. Open since pass 1; pass 7
+                // recommended exactly this and pass 8 agreed.
+                // Only a BARE e errors: `2energy` is still the implicit
+                // multiply the parser already applies to `2x`.
+                throw EvalError("'\(s)\(chars[i])' looks like a truncated exponent — write \(s)e6 for a power of ten, or \(s)*e for Euler's number")
             }
             guard let d = Double(s) else { throw EvalError("invalid number '\(s)'") }
             tokens.append(.number(d))
@@ -173,7 +182,6 @@ enum Lexer {
             case "×": tokens.append(.crossOp)
             case "°": tokens.append(.degree)
             case ".": tokens.append(.memberDot)
-            case "π": tokens.append(.ident("pi"))
             case "√": tokens.append(.ident("sqrt"))
             default: throw EvalError("unexpected character '\(c)'")
             }

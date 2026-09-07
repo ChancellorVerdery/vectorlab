@@ -5,10 +5,17 @@ import Foundation
 public enum MathPrint {
     public static func pretty(_ line: String) -> String {
         var s = line
-        s = s.replacing(/\\hat\s*[({]\s*([\p{L}_][\p{L}\p{N}_]*)\s*[)}]/) { m in
+        // The name a hat goes on is the LEXER's idea of a name: letters, ASCII
+        // digits, underscore. `\p{N}` was every Unicode number, which includes
+        // the script glyphs applyScripts makes - so `\hat u` then `^2` hatted
+        // the EXPONENT and produced a combining circumflex sitting on a
+        // superscript two. The lexer refuses that character outright, so the
+        // user's line stopped parsing on "unexpected character". Same class
+        // mistake, and same correction, as pass 10's `pi` rule.
+        s = s.replacing(/\\hat\s*[({]\s*([\p{L}_][\p{L}0-9_]*)\s*[)}]/) { m in
             String(m.output.1 + "\u{0302}").precomposedStringWithCanonicalMapping
         }
-        s = s.replacing(/\\hat\s+([\p{L}_][\p{L}\p{N}_]*)/) { m in
+        s = s.replacing(/\\hat\s+([\p{L}_][\p{L}0-9_]*)/) { m in
             String(m.output.1 + "\u{0302}").precomposedStringWithCanonicalMapping
         }
         // \vec stays in the text: the notebook renders it as a full-width
@@ -29,8 +36,22 @@ public enum MathPrint {
         s = s.replacing(/\\([a-zA-Z]+)/) { m in
             Lexer.greek[String(m.output.1)] ?? String(m.output.0)
         }
-        s = s.replacing(/\bpi\b/, with: "π")
         s = applyScripts(s)
+        // `pi` is the constant only when it is not part of a longer name.
+        // `\b` is a UAX #29 word boundary, which is the wrong notion twice:
+        //   * U+00B7 (what the `*` rule above produces) is MidLetter, so
+        //     "pi·r" reads as ONE word and pi never rendered at all; and
+        //   * the script glyphs applyScripts makes are not word characters,
+        //     so "x^2pi" only converted on a SECOND pass, which cost the user
+        //     a third Return (renderOrSubmit only commits at a fixed point).
+        // Use the lexer's own idea of a name character instead - letters,
+        // ASCII digits, underscore - so this is a one-pass rule. `spin`,
+        // `2pi` and `F_2pi` are all still left alone.
+        // (lookbehind is not supported, so the preceding character is captured
+        // and put back rather than asserted.)
+        s = s.replacing(/(^|[^\p{L}0-9_])pi(?![\p{L}0-9_])/) { m in
+            String(m.output.1) + "π"
+        }
         return s
     }
 
@@ -52,7 +73,13 @@ public enum MathPrint {
 
     /// _1 → ₁ and ^2 → ² (digits only — Unicode has no capital-letter
     /// subscripts, so r_AB stays inline). Safe rules: a second ^ after an
-    /// existing superscript run is left alone so 2^3^2 never merges into 2³².
+    /// existing superscript run is left alone so 2^3^2 never merges into 2³²,
+    /// and a fractional exponent is never superscripted at all — there is no
+    /// superscript "." to put in it.
+    ///
+    /// This is NOT display-only. RichEntryField writes the result back into
+    /// the entry's text binding on every keystroke, so whatever comes out of
+    /// here is the string the parser then sees.
     public static func applyScripts(_ input: String) -> String {
         let chars = Array(input)
         var out: [Character] = []
@@ -69,6 +96,24 @@ public enum MathPrint {
                 }
                 continue
             }
+            // A decimal point after a superscript run means the exponent was
+            // fractional all along: 2^3.5 superscripts the 3 the instant it is
+            // typed, and the "." arrives one keystroke later. Unicode has no
+            // superscript ".", so 2³.5 lexed as 2^3 followed by a stray .5 and
+            // the user's own line stopped parsing. Put the run back into ^ form.
+            if c == ".", let last = out.last, superscriptSet.contains(last) {
+                var run: [Character] = []
+                while let l = out.last, superscriptSet.contains(l) {
+                    run.append(out.removeLast())
+                }
+                out.append("^")
+                for ch in run.reversed() {
+                    out.append(ch == "⁻" ? "-" : (superscriptToPlain[ch] ?? ch))
+                }
+                out.append(".")
+                i += 1
+                continue
+            }
             if c == "^", let last = out.last, !superscriptSet.contains(last) {
                 var j = i + 1
                 var run: [Character] = []
@@ -79,7 +124,9 @@ public enum MathPrint {
                     sawDigit = true
                     j += 1
                 }
-                if sawDigit {
+                // …and don't create the problem in the first place when the
+                // whole exponent is already visible: 2^3.5 in one paste.
+                if sawDigit, !(j < chars.count && chars[j] == ".") {
                     out.append(contentsOf: run)
                     i = j
                     continue

@@ -96,7 +96,9 @@ struct RichEntryField: View {
         var id: CGFloat { x }
     }
 
-    private struct StyledLine {
+    /// Exposed to tests (pass 10): this is the only place the on-screen string
+    /// is rebuilt, and its plain characters are written back into `text`.
+    struct StyledLine {
         var attr = AttributedString()
         var spans: [ArrowSpan] = []
     }
@@ -104,10 +106,33 @@ struct RichEntryField: View {
     private static let bodySize = NSFont.preferredFont(forTextStyle: .body).pointSize
     private static let baseNSFont = NSFont.monospacedSystemFont(ofSize: bodySize, weight: .regular)
     private static let subNSFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-    private static let baseAdvance = ("0" as NSString).size(withAttributes: [.font: baseNSFont]).width
-    private static let subAdvance = ("0" as NSString).size(withAttributes: [.font: subNSFont]).width
-    private static let hiddenAdvance = ("0" as NSString).size(withAttributes:
-        [.font: NSFont.monospacedSystemFont(ofSize: 1, weight: .regular)]).width
+    /// `hiddenStyle` declares `.system(size: 1)` with NO design, so the font
+    /// that actually lays it out is the PROPORTIONAL system font. Measuring it
+    /// with the monospaced one (which is what this did until pass 13) puts
+    /// every arrow after a `\vec ` 0.70pt too far right, 1.77pt after a
+    /// `\overrightarrow `. Mirror the declaration exactly.
+    private static let hiddenNSFont = NSFont.systemFont(ofSize: 1)
+
+    /// Real advance of `s` in `f`. Pass 13 replaced the old `advance × count`
+    /// model with this: monospace is not a promise about every glyph, only
+    /// about the ones the font has. Subscript digits (₀-₉) and ∠ fall back
+    /// 0.21pt narrow, and a combining arrow (F⃗, which the lexer accepts as
+    /// `\vec F`) reflows its base character by up to 1.60pt. Counting
+    /// characters cannot see any of that; measuring cannot miss it.
+    ///
+    /// Cached because this runs per character, per keystroke: measuring an
+    /// unrealistically long 63-character line costs 418µs cold and 32µs warm.
+    /// `NSCache` rather than a dictionary so no isolation is claimed that the
+    /// call sites (SwiftUI body, and the tests) do not already have.
+    private static let advanceCache = NSCache<NSString, NSNumber>()
+
+    static func width(_ s: String, _ f: NSFont) -> CGFloat {
+        let key = "\(f.fontName)|\(f.pointSize)|\(s)" as NSString
+        if let hit = advanceCache.object(forKey: key) { return CGFloat(hit.doubleValue) }
+        let w = (s as NSString).size(withAttributes: [.font: f]).width
+        advanceCache.setObject(NSNumber(value: Double(w)), forKey: key)
+        return w
+    }
 
     private static let baseStyle = AttributeContainer().font(.system(.body, design: .monospaced))
     private static let subStyle = AttributeContainer()
@@ -129,7 +154,7 @@ struct RichEntryField: View {
     /// One pass: builds the styled line, records explicit `\vec NAME` arrow
     /// spans, and tracks every name run so the engine-derived decoration
     /// (arrow / unit hat) can be drawn over the defined name automatically.
-    private static func buildStyled(_ raw: String, decoration: LineDecoration?) -> StyledLine {
+    static func buildStyled(_ raw: String, decoration: LineDecoration?) -> StyledLine {
         var line = StyledLine()
         let chars = Array(raw)
         var i = 0
@@ -148,9 +173,9 @@ struct RichEntryField: View {
             runStartX = nil
         }
 
-        func append(_ s: String, _ style: AttributeContainer, advance: CGFloat) {
+        func append(_ s: String, _ style: AttributeContainer, font: NSFont) {
             line.attr += AttributedString(s, attributes: style)
-            x += advance * CGFloat(s.count)
+            x += width(s, font)
         }
 
         func closeSpan() {
@@ -175,12 +200,12 @@ struct RichEntryField: View {
                     endRun()
                     if j < chars.count, isNameChar(chars[j]) {
                         // Name present: hide the command, arrow the name.
-                        append(token, hiddenStyle, advance: hiddenAdvance)
+                        append(token, hiddenStyle, font: hiddenNSFont)
                         spanStart = x
                     } else {
                         // Still typing: keep \vec visible (dimmed) until the
                         // name it decorates exists.
-                        append(token, pendingStyle, advance: baseAdvance)
+                        append(token, pendingStyle, font: baseNSFont)
                     }
                     charPos += token.count
                     i = j
@@ -200,8 +225,8 @@ struct RichEntryField: View {
                 }
                 if sawLetter {
                     beginRun()
-                    append("_", hiddenStyle, advance: hiddenAdvance)
-                    append(run, subStyle, advance: subAdvance)
+                    append("_", hiddenStyle, font: hiddenNSFont)
+                    append(run, subStyle, font: subNSFont)
                     charPos += 1 + run.count
                     i = j
                     continue
@@ -215,7 +240,7 @@ struct RichEntryField: View {
                 if spanStart != nil { closeSpan() }
                 if c == "=", eqPos == nil { eqPos = charPos }
             }
-            append(String(c), baseStyle, advance: baseAdvance)
+            append(String(c), baseStyle, font: baseNSFont)
             charPos += 1
             i += 1
         }
@@ -237,29 +262,58 @@ struct RichEntryField: View {
 
     // MARK: - Live rendering
 
-    /// Space completes a \command (\theta, \hat(a)) and swallows itself;
-    /// _1 / ^2 become ₁ / ² the moment the digit lands. End-of-line only.
-    private func liveRender(old: String, new: String) {
-        guard focus.wrappedValue == id,
-              new.count == old.count + 1,
-              new.hasPrefix(old)
-        else { return }
-        let trimmed = new.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.hasPrefix("#"), !trimmed.hasPrefix("//") else { return }
+    /// A \command still waiting for the space that completes it: \theta,
+    /// \hat(a), \vec F. Compiled once — liveRender runs on every keystroke.
+    private static let trailingCommand = /\\[a-zA-Z]+(\s*[({]?[\p{L}\p{N}_]*[)}]?)?$/
 
-        if new.hasSuffix(" ") {
-            let body = String(new.dropLast())
-            guard body.contains(try! Regex(#"\\[a-zA-Z]+(\s*[({]?[\p{L}\p{N}_]*[)}]?)?$"#)) else { return }
-            let pretty = MathPrint.pretty(body)
-            if pretty != body {
-                text = pretty
-            }
-        } else {
-            let scripted = MathPrint.applyScripts(new)
-            if scripted != new {
-                text = scripted
-            }
-        }
+    /// What a space keystroke turns `new` into, or nil to leave it alone.
+    /// Extracted from `liveRender` so it is testable on its own: `liveRender`
+    /// needs a live FocusState binding, this needs nothing.
+    ///
+    /// The space swallows itself only when it COMPLETED the trailing
+    /// \command. Testing `pretty(body) != body` is not that question: any
+    /// unrelated rewrite elsewhere on the line — `*`→`·`, `pi`→`π`, `@`→`∠` —
+    /// also makes it true, and then the user's space vanished while `\hat`
+    /// was still waiting for its name. The next keystroke glued onto the
+    /// command (`\hatu`) and the line stopped parsing, permanently, on an
+    /// ordinary one: `\vec F = 3*\hat u`. So ask the real question — is the
+    /// trailing command still pending after the rewrite? — and if it is, put
+    /// the space back.
+    static func spaceCompletion(_ new: String) -> String? {
+        guard new.hasSuffix(" ") else { return nil }
+        let body = String(new.dropLast())
+        guard let pending = body.firstMatch(of: trailingCommand) else { return nil }
+        let pretty = MathPrint.pretty(body)
+        guard pretty != body else { return nil }
+        let stillPending = pretty.firstMatch(of: trailingCommand).map { String(pretty[$0.range]) }
+        return stillPending == String(body[pending.range]) ? pretty + " " : pretty
+    }
+
+    /// What one keystroke turns `new` into, or nil to leave the text alone.
+    /// This is the WHOLE decision `liveRender` makes, guards included, pulled
+    /// out for the same reason pass 11 pulled out `spaceCompletion`: the only
+    /// thing a test cannot supply is the live `FocusState` binding. Passes
+    /// 8-11 each left "the guards are untested" in the handoff; they are
+    /// testable now.
+    ///
+    /// The two guards mean END-OF-LINE typing only. An insertion or a delete
+    /// anywhere else fails `hasPrefix` or the count, and the line is left
+    /// exactly as the user edited it until Return runs `pretty` over it.
+    static func keystrokeRewrite(old: String, new: String) -> String? {
+        guard new.count == old.count + 1, new.hasPrefix(old) else { return nil }
+        let trimmed = new.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.hasPrefix("#"), !trimmed.hasPrefix("//") else { return nil }
+
+        if new.hasSuffix(" ") { return spaceCompletion(new) }
+        let scripted = MathPrint.applyScripts(new)
+        return scripted != new ? scripted : nil
+    }
+
+    /// Space completes a \command (\theta, \hat(a)) and swallows itself;
+    /// _1 / ^2 become the script glyph the moment the digit lands.
+    private func liveRender(old: String, new: String) {
+        guard focus.wrappedValue == id else { return }
+        if let rewritten = Self.keystrokeRewrite(old: old, new: new) { text = rewritten }
     }
 
     /// First Return renders remaining notation; the next commits the line.

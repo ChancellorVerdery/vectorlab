@@ -22,5 +22,10 @@ let package = Package(
             dependencies: ["VectorLabScene"],
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
+        .testTarget(
+            name: "VectorLabAppTests",
+            dependencies: ["VectorLab"],
+            swiftSettings: [.defaultIsolation(MainActor.self)]
+        ),
     ]
 )

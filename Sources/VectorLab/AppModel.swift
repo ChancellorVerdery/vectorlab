@@ -8,6 +8,10 @@ import VectorLabScene
 final class AppModel {
     var entries: [Entry] = []
     private(set) var outcomes: [LineOutcome] = []
+    /// `entries.map(\.id)` as of the last `reevaluate()`. `outcomes[i]` belongs to
+    /// `outcomeIDs[i]` — NOT to `entries[i]`, which may already have been reordered
+    /// or shortened by an edit that has not been re-evaluated yet.
+    private var outcomeIDs: [UUID] = []
 
     var showAxes = true
     var showGrid = true
@@ -16,8 +20,13 @@ final class AppModel {
     var presetToken = 0
     var fitToken = 0
 
-    init() {
-        entries = Self.loadEntries() ?? Self.sampleEntries()
+    /// Where `save()` writes and `init` reads. `nil` means this model is in-memory only:
+    /// nothing is loaded and nothing is written. Defaults to the real app-support location.
+    private let saveURL: URL?
+
+    init(saveURL: URL? = AppModel.defaultSaveURL()) {
+        self.saveURL = saveURL
+        entries = Self.loadEntries(from: saveURL) ?? Self.sampleEntries()
         reevaluate()
     }
 
@@ -25,24 +34,25 @@ final class AppModel {
 
     func reevaluate() {
         outcomes = Engine.evaluate(entries.map(\.text))
+        outcomeIDs = entries.map(\.id)
         save()
     }
 
     func outcome(for id: UUID) -> LineOutcome? {
-        guard let idx = entries.firstIndex(where: { $0.id == id }), outcomes.indices.contains(idx) else { return nil }
+        guard let idx = outcomeIDs.firstIndex(of: id) else { return nil }
         return outcomes[idx]
     }
 
     var coloredDrawables: [ColoredDrawable] {
-        zip(entries, outcomes).compactMap { entry, outcome in
-            guard entry.visible, let d = outcome.drawable else { return nil }
+        entries.compactMap { entry in
+            guard entry.visible, let d = outcome(for: entry.id)?.drawable else { return nil }
             return ColoredDrawable(drawable: d, colorIndex: entry.colorIndex)
         }
     }
 
     var coloredArcs: [ColoredArc] {
-        zip(entries, outcomes).compactMap { entry, outcome in
-            guard entry.visible, let a = outcome.arc else { return nil }
+        entries.compactMap { entry in
+            guard entry.visible, let a = outcome(for: entry.id)?.arc else { return nil }
             return ColoredArc(arc: a, colorIndex: entry.colorIndex)
         }
     }
@@ -51,19 +61,35 @@ final class AppModel {
 
     @discardableResult
     func addEntry(after id: UUID? = nil) -> UUID {
+        let insertAt = id.flatMap { id in entries.firstIndex(where: { $0.id == id }).map { $0 + 1 } }
+            ?? entries.count
         var entry = Entry()
-        entry.colorIndex = entries.count % Palette.nsColors.count
-        if let id, let idx = entries.firstIndex(where: { $0.id == id }) {
-            entries.insert(entry, at: idx + 1)
-        } else {
-            entries.append(entry)
-        }
+        entry.colorIndex = Self.colorIndex(insertingAt: insertAt, among: entries)
+        entries.insert(entry, at: insertAt)
         return entry.id
     }
 
     func remove(_ id: UUID) {
+        guard entries.contains(where: { $0.id == id }) else { return }
         entries.removeAll { $0.id == id }
         if entries.isEmpty { entries = [Entry()] }
+        reevaluate()
+    }
+
+    /// The first palette slot that neither immediate neighbour of the insertion
+    /// point is using, walking forward from the count-based default. Falls back
+    /// to that default when the palette is too small to avoid both.
+    private static func colorIndex(insertingAt index: Int, among entries: [Entry]) -> Int {
+        let n = Palette.nsColors.count
+        let taken = Set([index - 1, index].compactMap { i -> Int? in
+            guard entries.indices.contains(i) else { return nil }
+            return ((entries[i].colorIndex % n) + n) % n
+        })
+        let start = entries.count % n
+        for step in 0..<n where !taken.contains((start + step) % n) {
+            return (start + step) % n
+        }
+        return start
     }
 
     func move(_ id: UUID, by delta: Int) {
@@ -90,7 +116,8 @@ final class AppModel {
 
     // MARK: - Persistence (best-effort autosave)
 
-    private static var saveURL: URL? {
+    /// `~/Library/Application Support/VectorLab/workspace.json`, creating the directory.
+    static func defaultSaveURL() -> URL? {
         guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         else { return nil }
         let dir = base.appendingPathComponent("VectorLab", isDirectory: true)
@@ -100,12 +127,16 @@ final class AppModel {
 
     private func save() {
         // ponytail: saves on every re-eval (each keystroke); debounce if it ever matters
-        guard let url = Self.saveURL, let data = try? JSONEncoder().encode(entries) else { return }
-        try? data.write(to: url)
+        guard let url = saveURL, let data = try? JSONEncoder().encode(entries) else { return }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // .atomic: this runs on every keystroke, so a plain write leaves a real
+        // window where a crash or a full disk truncates the saved notebook in place.
+        try? data.write(to: url, options: .atomic)
     }
 
-    private static func loadEntries() -> [Entry]? {
-        guard let url = saveURL, let data = try? Data(contentsOf: url),
+    private static func loadEntries(from url: URL?) -> [Entry]? {
+        guard let url, let data = try? Data(contentsOf: url),
               let entries = try? JSONDecoder().decode([Entry].self, from: data), !entries.isEmpty
         else { return nil }
         return entries

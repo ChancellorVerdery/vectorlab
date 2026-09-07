@@ -79,8 +79,10 @@ struct Evaluator {
 
         case .polar(let magE, let angE):
             let m = try eval(magE).asScalar("magnitude before ∠")
-            let a = try eval(angE).asScalar("angle after ∠") * .pi / 180
-            return .vector(Vec3(m * Foundation.cos(a), m * Foundation.sin(a), 0), anchor: nil)
+            let a = try eval(angE).asScalar("angle after ∠")
+            // Trig, not Foundation: m ∠ 90 must be straight up with an x of
+            // exactly 0, not 6.1232e-17 · m.
+            return .vector(Vec3(m * Trig.cos(a), m * Trig.sin(a), 0), anchor: nil)
 
         case .magnitude(let inner):
             switch try eval(inner) {
@@ -123,7 +125,9 @@ struct Evaluator {
         case .vector(let v, _):
             // Missing \vec is no longer an error — the app applies the
             // notation automatically (arrow, or hat for unit magnitude).
-            if isHat, abs(v.length - 1) > 1e-6 {
+            // Phrased as !(… <= …) so a NaN or infinite magnitude fails the
+            // check: every comparison against NaN is false.
+            if isHat, !(abs(v.length - 1) <= 1e-6) {
                 throw EvalError("\(name) must be a unit vector, but |\(name)| = \(Fmt.num(v.length)) — wrap the value in unit(…)")
             }
         case .scalar:
@@ -167,16 +171,19 @@ struct Evaluator {
         guard rest.count >= 2 else { return nil }
 
         var candidates: [(Vec3, Vec3)] = []
+        var anyEndpointKnown = false
         for cut in 1..<rest.count {
-            let aName = String(rest.prefix(cut))
-            let bName = String(rest.dropFirst(cut))
-            guard let a = env[aName], let b = env[bName],
-                  !a.isScalar, !b.isScalar,
-                  let pa = try? a.asPosition("r_"), let pb = try? b.asPosition("r_")
-            else { continue }
+            let a = endpointPosition(String(rest.prefix(cut)))
+            let b = endpointPosition(String(rest.dropFirst(cut)))
+            if a != nil || b != nil { anyEndpointKnown = true }
+            guard let pa = a, let pb = b else { continue }
             candidates.append((pa, pb))
         }
         guard !candidates.isEmpty else {
+            // Nothing on either side of any split names a place, so this is an
+            // ordinary undefined name that happens to start r_ — a reaction
+            // force called R_max should not be told to "define points m, a, x".
+            guard anyEndpointKnown else { return nil }
             throw EvalError("to use \(name), define points \(rest.map(String.init).joined(separator: " and ")) first")
         }
         guard candidates.count == 1 else {
@@ -184,6 +191,18 @@ struct Evaluator {
         }
         let (a, b) = candidates[0]
         return .vector(b - a, anchor: a)
+    }
+
+    /// A name usable as an endpoint of r_AB: any defined non-scalar, plus the
+    /// builtin `origin`. Only `origin` is taken from the builtins — i, j and k
+    /// are directions rather than places, and r_ij is not a position vector.
+    private func endpointPosition(_ name: String) -> Vec3? {
+        let value: Value
+        if let defined = env[name] { value = defined }
+        else if name == "origin" { value = .point(.zero) }
+        else { return nil }
+        guard !value.isScalar else { return nil }
+        return try? value.asPosition("r_")
     }
 
     // MARK: - Operators
@@ -253,8 +272,31 @@ struct Evaluator {
             guard case .scalar(let a) = l, case .scalar(let b) = r else {
                 throw EvalError("'^' needs numbers — for vectors use v*v or mag(v)^2")
             }
+            // pow(-8, 1/3) is NaN, not -2 — real powers of a negative base
+            // need a whole exponent. Say that instead of printing NaN.
+            guard a >= 0 || b == b.rounded() else {
+                // Parenthesised: bare -8^0.3333 re-parses as -(8^0.3333), a
+                // valid expression and not the one being refused. An error in
+                // a teaching tool has to model notation the tool accepts.
+                throw EvalError("a negative base needs a whole exponent — (\(Fmt.num(a)))^\(Fmt.num(b)) is undefined")
+            }
+            // 0^-1 IS 1/0. `/` has named that "division by zero" since the
+            // start; written as an exponent the same question printed ∞.
+            guard !(a == 0 && b < 0) else { throw EvalError("division by zero") }
             return .scalar(Foundation.pow(a, b))
         }
+    }
+
+    /// normalized() answers nil for two different mistakes — the zero vector
+    /// and a vector with a NaN or infinite component — and every caller used
+    /// to blame the first. `unit(<1e400, 0, 0>)` read "can't take the unit of
+    /// a zero vector", which sends the reader hunting in the wrong place.
+    private func direction(of v: Vec3, _ complaint: String) throws -> Vec3 {
+        guard v.isFinite else {
+            throw EvalError("\(complaint) \(Fmt.vector(v)) — it has no direction")
+        }
+        guard let u = v.normalized else { throw EvalError("\(complaint) a zero vector") }
+        return u
     }
 
     // MARK: - Functions (trig is degree-based; inverse trig returns degrees)
@@ -275,7 +317,7 @@ struct Evaluator {
             guard case .vector(let v, let a) = args[0] else {
                 throw EvalError("\(rawName)(…) needs a vector, got \(args[0].typeName)")
             }
-            guard let u = v.normalized else { throw EvalError("can't take the unit of a zero vector") }
+            let u = try direction(of: v, "can't take the unit of")
             return .vector(u, anchor: a)
 
         case "mag", "norm", "length":
@@ -300,24 +342,27 @@ struct Evaluator {
 
         case "angle":
             try arity(2)
-            let a = try vec(0), b = try vec(1)
-            guard let ua = a.normalized, let ub = b.normalized else {
+            let av = try direction(of: try vec(0), "can't measure the angle of")
+            let bv = try direction(of: try vec(1), "can't measure the angle of")
+            guard let radians = av.angle(to: bv) else {
                 throw EvalError("angle(…) needs nonzero vectors")
             }
-            let c = min(1, max(-1, ua.dot(ub)))
-            return .scalar(Foundation.acos(c) * 180 / .pi)
+            return .scalar(radians * 180 / .pi)
 
         case "proj":   // vector projection of a onto b
             try arity(2)
             let a = try vec(0), b = try vec(1)
-            let bb = b.dot(b)
-            guard bb > 1e-24 else { throw EvalError("can't project onto a zero vector") }
-            return .vector((a.dot(b) / bb) * b, anchor: nil)
+            // (a·b̂)b̂ rather than (a·b / b·b)b: b·b underflows to zero for
+            // perfectly ordinary small vectors, so proj(<1,0,0>, <1e-20,0,0>)
+            // raised "can't project onto a zero vector" while comp(…) on the
+            // same pair answered 1. Both now accept exactly what unit() does.
+            let ub = try direction(of: b, "can't project onto")
+            return .vector(a.dot(ub) * ub, anchor: nil)
 
         case "comp":   // scalar component of a along b
             try arity(2)
             let a = try vec(0), b = try vec(1)
-            guard let ub = b.normalized else { throw EvalError("can't project onto a zero vector") }
+            let ub = try direction(of: b, "can't project onto")
             return .scalar(a.dot(ub))
 
         case "triple":   // a · (b × c)
@@ -328,8 +373,12 @@ struct Evaluator {
             if args.count == 2 {                       // M = r × F
                 return .vector(try vec(0).cross(try vec(1)), anchor: nil)
             }
-            try arity(3)                               // moment(axis, r, F): scalar about axis
-            guard let ua = try vec(0).normalized else { throw EvalError("moment axis can't be zero") }
+            // moment(axis, r, F): scalar about an axis. Spell out both forms —
+            // "takes 3 arguments" is wrong when moment(r, F) is also valid.
+            guard args.count == 3 else {
+                throw EvalError("moment(…) takes moment(r, F) or moment(axis, r, F)")
+            }
+            let ua = try direction(of: try vec(0), "the moment axis can't be")
             return .scalar(ua.dot(try vec(1).cross(try vec(2))))
 
         case "dist":
@@ -352,9 +401,16 @@ struct Evaluator {
             guard x >= 0 else { throw EvalError("sqrt of a negative number") }
             return .scalar(x.squareRoot())
 
-        case "sin": try arity(1); return .scalar(Foundation.sin(try num(0) * .pi / 180))
-        case "cos": try arity(1); return .scalar(Foundation.cos(try num(0) * .pi / 180))
-        case "tan": try arity(1); return .scalar(Foundation.tan(try num(0) * .pi / 180))
+        // Degree-based and exact on the quadrant multiples — see Trig.
+        case "sin": try arity(1); return .scalar(Trig.sin(try num(0)))
+        case "cos": try arity(1); return .scalar(Trig.cos(try num(0)))
+        case "tan":
+            try arity(1)
+            let t = try num(0)
+            guard let value = Trig.tan(t) else {
+                throw EvalError("tan(\(Fmt.num(t))°) is undefined — the tangent is vertical there")
+            }
+            return .scalar(value)
 
         case "asin", "acos":
             try arity(1)

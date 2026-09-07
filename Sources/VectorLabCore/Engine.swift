@@ -68,13 +68,21 @@ public enum Engine {
         return lines.map { line in
             do {
                 let stmt = try Parser.parseLine(line)
+                // Evaluator is a struct, so this is a cheap snapshot of the
+                // environment BEFORE the line runs. arc(for:) re-evaluates the
+                // two arguments, and doing that against the post-execute
+                // environment made a self-redefining line read the value it had
+                // just written: `a = angle(a, b)` turns `a` into a scalar, the
+                // vector guard fails, and the arc silently vanished from the one
+                // line that is literally an angle measurement.
+                let before = evaluator
                 guard let (name, value) = try evaluator.execute(stmt) else {
                     return LineOutcome(
                         status: line.trimmingCharacters(in: .whitespaces).isEmpty ? .blank : .comment,
                         resultText: "", drawable: nil, arc: nil, decoration: nil)
                 }
                 let drawable = Self.drawable(for: value, name: name, sourceLine: line)
-                let arc = Self.arc(for: stmt, evaluator: evaluator)
+                let arc = Self.arc(for: stmt, evaluator: before)
                 return LineOutcome(status: .ok, resultText: Fmt.value(value), drawable: drawable,
                                    arc: arc, decoration: Self.decoration(for: value, name: name))
             } catch let err as EvalError {
@@ -132,10 +140,13 @@ public enum Engine {
         guard case .call(let fn, let args) = expr, fn.lowercased() == "angle", args.count == 2,
               case .vector(let a, let aAnchor)? = try? evaluator.eval(args[0]),
               case .vector(let b, let bAnchor)? = try? evaluator.eval(args[1]),
-              let ua = a.normalized, let ub = b.normalized
+              let radians = a.angle(to: b)
         else { return nil }
-        let deg = Foundation.acos(min(1, max(-1, ua.dot(ub)))) * 180 / .pi
+        let deg = radians * 180 / .pi
         let origin = (aAnchor != nil && aAnchor == bAnchor) ? aAnchor! : .zero
+        // drawable(for:) already refuses to draw non-finite geometry; arcs were
+        // the one shape that did not, so an overflowed anchor reached the scene.
+        guard origin.isFinite, a.isFinite, b.isFinite, deg.isFinite else { return nil }
         return ArcSpec(origin: origin, from: a, to: b, degrees: deg)
     }
 }

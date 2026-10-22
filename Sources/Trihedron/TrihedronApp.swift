@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct TrihedronApp: App {
-    @State private var model = AppModel()
+    @State private var model = Snapshot.directory == nil ? AppModel() : Snapshot.makeModel()
 
     var body: some Scene {
         WindowGroup("Trihedron") {

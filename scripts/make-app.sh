@@ -18,7 +18,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <dict>
   <key>CFBundleName</key><string>Trihedron</string>
   <key>CFBundleDisplayName</key><string>Trihedron</string>
-  <key>CFBundleIdentifier</key><string>com.chancellor.trihedron</string>
+  <key>CFBundleIdentifier</key><string>local.trihedron.Trihedron</string>
   <key>CFBundleVersion</key><string>1.0</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleExecutable</key><string>Trihedron</string>

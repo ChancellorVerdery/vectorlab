@@ -7,8 +7,8 @@ import TrihedronScene
 /// Pass 4. The first tests the executable target has ever had.
 ///
 /// Passes 1–3 all deferred this because `AppModel.init()` read and `save()` wrote
-/// Chancellor's real `~/Library/Application Support/Trihedron/workspace.json`, so
-/// merely constructing a model in a test would clobber his saved notebook. Pass 4
+/// the user's real `~/Library/Application Support/Trihedron/workspace.json`, so
+/// merely constructing a model in a test would clobber their saved notebook. Pass 4
 /// makes the location injectable; every model below is built either in-memory
 /// (`saveURL: nil`) or against a temp file, and none of them can reach the real one.
 @MainActor

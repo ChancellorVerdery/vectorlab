@@ -66,6 +66,11 @@ struct ContentView: View {
             }
         }
         .navigationTitle("Trihedron")
+        .task {
+            guard let dir = Snapshot.directory else { return }
+            try? await Task.sleep(for: .seconds(1))
+            await Snapshot.run(model: model, proxy: viewportProxy, into: dir)
+        }
     }
 
     private func saveSnapshot() {

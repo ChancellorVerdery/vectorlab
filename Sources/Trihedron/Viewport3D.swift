@@ -46,6 +46,7 @@ struct Viewport3D: NSViewRepresentable {
         view.antialiasingMode = .multisampling4X
         coordinator.view = view
         proxy.view = view
+        proxy.controller = coordinator.controller
 
         let link = view.displayLink(target: coordinator, selector: #selector(Coordinator.tick(_:)))
         link.add(to: .main, forMode: .common)

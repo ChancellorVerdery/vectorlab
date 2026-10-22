@@ -2,29 +2,29 @@
 import PackageDescription
 
 let package = Package(
-    name: "VectorLab",
+    name: "Trihedron",
     platforms: [.macOS(.v26)],
     targets: [
-        .target(name: "VectorLabCore"),
+        .target(name: "TrihedronCore"),
         .target(
-            name: "VectorLabScene",
-            dependencies: ["VectorLabCore"],
+            name: "TrihedronScene",
+            dependencies: ["TrihedronCore"],
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
         .executableTarget(
-            name: "VectorLab",
-            dependencies: ["VectorLabCore", "VectorLabScene"],
+            name: "Trihedron",
+            dependencies: ["TrihedronCore", "TrihedronScene"],
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
-        .testTarget(name: "VectorLabCoreTests", dependencies: ["VectorLabCore"]),
+        .testTarget(name: "TrihedronCoreTests", dependencies: ["TrihedronCore"]),
         .testTarget(
-            name: "VectorLabSceneTests",
-            dependencies: ["VectorLabScene"],
+            name: "TrihedronSceneTests",
+            dependencies: ["TrihedronScene"],
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
         .testTarget(
-            name: "VectorLabAppTests",
-            dependencies: ["VectorLab"],
+            name: "TrihedronAppTests",
+            dependencies: ["Trihedron"],
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
     ]

@@ -1,0 +1,419 @@
+import Foundation
+
+indirect enum Expr: Equatable {
+    case number(Double)
+    case ident(String)
+    case call(String, [Expr])
+    case vecLiteral([Expr])      // ⟨…⟩ or […]; 2 or 3 components, 2 means z = 0
+    case pointLiteral([Expr])    // (x, y[, z]) — parens are coordinates, a point
+    case polar(Expr, Expr)       // magnitude ∠ angle(degrees), in the XY plane
+    case magnitude(Expr)         // |v|
+    case member(Expr, String)    // v.x  v.y  v.z
+    case unaryMinus(Expr)
+    case binary(BinOp, Expr, Expr)
+}
+
+enum BinOp: Equatable {
+    case add, sub, mul, div, pow, dotProduct, crossProduct
+}
+
+/// `x in [lo, hi]` after a definition: the sampling range of one graph
+/// variable. Only meaningful when the definition turns out to be a graph,
+/// which the parser cannot know — that depends on whether `x` is bound.
+struct DomainClause: Equatable {
+    var name: String
+    var lo: Expr
+    var hi: Expr
+}
+
+enum Statement: Equatable {
+    case blank
+    case comment(String)
+    case definition(name: String, isPoint: Bool, isVec: Bool, expr: Expr, domain: [DomainClause])
+    case expression(Expr)
+}
+
+struct Parser {
+    private let tokens: [Token]
+    private var i = 0
+    private var depth = 0
+
+    /// Every recursive descent — parens, brackets, |…|, call arguments and
+    /// unary runs — passes through unary(), so one counter there bounds the
+    /// whole grammar. Without it a pasted line of a few thousand '(' overflows
+    /// the stack and kills the app.
+    ///
+    /// 64, not a bigger round number: one nesting level costs about nine stack
+    /// frames (unary → power → postfix → primary → expression → additive →
+    /// multiplicative → polarTerm → unary), and this parser also runs off the
+    /// main thread, where the stack is 512 KB rather than 8 MB. A limit of 256
+    /// still crashed the test runner with SIGBUS. 64 leaves an order of
+    /// magnitude of headroom and is far past anything hand-written.
+    private static let maxDepth = 64
+
+    static func parseLine(_ line: String) throws -> Statement {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return .blank }
+        if trimmed.hasPrefix("#") || trimmed.hasPrefix("//") { return .comment(trimmed) }
+
+        var p = Parser(tokens: try Self.foldHats(Lexer.tokenize(trimmed)))
+        return try p.statement()
+    }
+
+    /// \hat u (also \hat(u) and \hat{u}) collapses to the single distinct
+    /// identifier û before parsing, so hats work anywhere a name does.
+    private static func foldHats(_ tokens: [Token]) throws -> [Token] {
+        var out: [Token] = []
+        var i = 0
+        while i < tokens.count {
+            guard tokens[i] == .hatKeyword else {
+                out.append(tokens[i])
+                i += 1
+                continue
+            }
+            var j = i + 1
+            let wrapped = j < tokens.count && tokens[j] == .lparen
+            if wrapped { j += 1 }
+            guard j < tokens.count, case .ident(let n) = tokens[j] else {
+                throw EvalError("\\hat takes a single name, like \\hat u or \\hat(u)")
+            }
+            j += 1
+            if wrapped {
+                guard j < tokens.count, tokens[j] == .rparen else {
+                    throw EvalError("\\hat takes a single name, like \\hat u or \\hat(u)")
+                }
+                j += 1
+            }
+            // Hat goes on the first letter: \hat u_1 is û_1, not u_1̂.
+            let hatted = String(n.prefix(1)) + "\u{0302}" + n.dropFirst()
+            out.append(.ident(hatted.precomposedStringWithCanonicalMapping))
+            i = j
+        }
+        return out
+    }
+
+    private init(tokens: [Token]) { self.tokens = tokens }
+
+    private var peek: Token? { i < tokens.count ? tokens[i] : nil }
+    private func peek(_ ahead: Int) -> Token? { i + ahead < tokens.count ? tokens[i + ahead] : nil }
+    private mutating func advance() -> Token? {
+        defer { i += 1 }
+        return peek
+    }
+
+    private mutating func expect(_ t: Token, _ what: String) throws {
+        guard peek == t else { throw EvalError("expected \(what)") }
+        i += 1
+    }
+
+    private mutating func statement() throws -> Statement {
+        var isVec = false
+        if peek == .vecKeyword {   // \vec F = ...,  F⃗ = ...,  or bare  \vec r_AB
+            isVec = true
+            i += 1
+        }
+
+        // \vec(F) = … and \vec{F} = …. \hat has taken all three spellings
+        // since foldHats was written, the lexer maps braces to parens so
+        // "LaTeX braces act as parens", and MathPrint has a rule whose only
+        // job is rewriting \vec{F} — but the parser only ever handled the
+        // bare \vec F. The wrapped name parsed as a parenthesised expression,
+        // which left the '=' behind: "unexpected trailing input near '='".
+        if isVec, peek == .lparen, case .ident(let name) = peek(1) ?? .comma,
+           peek(2) == .rparen, peek(3) == .equals {
+            i += 4
+            let e = try expression()
+            let domain = try domainClauses()
+            try expectEnd()
+            return .definition(name: name, isPoint: false, isVec: true, expr: e, domain: domain)
+        }
+
+        var isPoint = false
+        if case .ident("point") = peek ?? .comma,
+           case .ident = peek(1) ?? .comma, peek(2) == .equals {
+            isPoint = true
+            i += 1
+            if peek == .vecKeyword { isVec = true; i += 1 }
+        }
+
+        if case .ident(let name) = peek ?? .comma, peek(1) == .equals {
+            i += 2
+            let e = try expression()
+            let domain = try domainClauses()
+            try expectEnd()
+            return .definition(name: name, isPoint: isPoint, isVec: isVec, expr: e, domain: domain)
+        }
+        if isPoint { throw EvalError("expected: point NAME = (x, y, z)") }
+
+        let e = try expression()
+        if peek == .comma {
+            throw EvalError("a domain like x in [-3, 3] needs a definition to graph — write y = … or z = … on the left")
+        }
+        try expectEnd()
+        return .expression(e)
+    }
+
+    /// Zero or more `, NAME in [lo, hi]` clauses after a definition's expression.
+    /// The brackets are read here rather than as a vector literal so the two
+    /// bounds stay separate expressions — `[-L, L]` with L defined is fine.
+    private mutating func domainClauses() throws -> [DomainClause] {
+        var clauses: [DomainClause] = []
+        while peek == .comma {
+            i += 1
+            guard case .ident(let name)? = peek, peek(1) == .ident("in") else {
+                throw EvalError("expected a domain like x in [-3, 3] after the comma")
+            }
+            i += 2
+            try expect(.lbracket, "'[' — a domain is written x in [lo, hi]")
+            let lo = try expression()
+            try expect(.comma, "',' between the domain bounds")
+            let hi = try expression()
+            try expect(.rbracket, "']' to close the domain")
+            clauses.append(DomainClause(name: name, lo: lo, hi: hi))
+        }
+        return clauses
+    }
+
+    private mutating func expectEnd() throws {
+        if let t = peek { throw EvalError("unexpected trailing input near \(describe(t))") }
+    }
+
+    /// Parse errors quote the token the reader typed. Interpolating the enum
+    /// put its Swift case name on screen instead — "unexpected trailing input
+    /// near 'rangle'" for a stray '>'.
+    private func describe(_ t: Token) -> String {
+        switch t {
+        case .number(let n): return "'\(Fmt.num(n))'"
+        case .ident(let s): return "'\(s)'"
+        case .vecKeyword: return "'\\vec'"
+        case .hatKeyword: return "'\\hat'"
+        case .plus: return "'+'"
+        case .minus: return "'-'"
+        case .star: return "'*'"
+        case .slash: return "'/'"
+        case .caret: return "'^'"
+        case .equals: return "'='"
+        case .comma: return "','"
+        case .lparen: return "'('"
+        case .rparen: return "')'"
+        case .langle: return "'<'"
+        case .rangle: return "'>'"
+        case .lbracket: return "'['"
+        case .rbracket: return "']'"
+        case .pipe: return "'|'"
+        case .angleOp: return "'∠'"
+        case .dotOp: return "'·'"
+        case .crossOp: return "'×'"
+        case .degree: return "'°'"
+        case .memberDot: return "'.'"
+        }
+    }
+
+    // MARK: - Expression grammar (precedence low → high)
+
+    private mutating func expression() throws -> Expr { try additive() }
+
+    private mutating func additive() throws -> Expr {
+        var lhs = try multiplicative()
+        while let t = peek, t == .plus || t == .minus {
+            i += 1
+            let rhs = try multiplicative()
+            lhs = .binary(t == .plus ? .add : .sub, lhs, rhs)
+        }
+        return lhs
+    }
+
+    /// Starters that allow implicit multiplication after a NUMBER literal:
+    /// 3i, 2x, 2(a+b), 4⟨1,0,0⟩. `|` is excluded (breaks closing-pipe
+    /// detection), and numbers are excluded so a missed comma (`<1 2, 3>`)
+    /// or missed operator (`100 200`) errors instead of silently multiplying.
+    private func startsImplicitFactor(_ t: Token) -> Bool {
+        switch t {
+        case .ident, .lparen, .langle, .lbracket: return true
+        default: return false
+        }
+    }
+
+    /// True when the token just consumed can be the left side of an implicit
+    /// multiply: a number literal (3i, 2x) or a closing paren — engineers
+    /// write cos(theta)i + sin(theta)j.
+    private func previousTokenAllowsImplicitMul() -> Bool {
+        guard i > 0 else { return false }
+        switch tokens[i - 1] {
+        case .number, .rparen: return true
+        default: return false
+        }
+    }
+
+    private mutating func multiplicative() throws -> Expr {
+        var lhs = try polarTerm()
+        loop: while let t = peek {
+            let op: BinOp
+            switch t {
+            case .star: op = .mul
+            case .slash: op = .div
+            case .dotOp: op = .dotProduct
+            case .crossOp: op = .crossProduct
+            default:
+                // ponytail: juxtaposition multiplies only after a number or `)`
+                // (3i, 2x, cos(t)i); ident chains like `2 pi r` need explicit `*`
+                // — except a hatted symbol after a name: Rû reads R·û.
+                if startsImplicitFactor(t), previousTokenAllowsImplicitMul() || hattedAfterIdent(t) {
+                    op = .mul
+                } else {
+                    break loop
+                }
+            }
+            if t == .star || t == .slash || t == .dotOp || t == .crossOp { i += 1 }
+            let rhs = try polarTerm()
+            lhs = .binary(op, lhs, rhs)
+        }
+        return lhs
+    }
+
+    private mutating func polarTerm() throws -> Expr {
+        let lhs = try unary()
+        if peek == .angleOp {
+            i += 1
+            var angle = try unary()
+            // Fold 10∠2theta / 10∠2(…): implicit multiply inside the angle operand,
+            // which sits below multiplicative() and would otherwise miss it.
+            while let t = peek, t == .lparen || isIdentToken(t), previousTokenAllowsImplicitMul() {
+                angle = .binary(.mul, angle, try unary())
+            }
+            return .polar(lhs, angle)
+        }
+        return lhs
+    }
+
+    private func isIdentToken(_ t: Token) -> Bool {
+        if case .ident = t { return true }
+        return false
+    }
+
+    /// Rû, xî: a hatted unit-vector symbol juxtaposed after a plain name
+    /// multiplies — the hat makes the boundary visually unambiguous.
+    private func hattedAfterIdent(_ t: Token) -> Bool {
+        guard case .ident(let n) = t, let first = n.first, Lexer.hasHat(first) else { return false }
+        guard i > 0, case .ident = tokens[i - 1] else { return false }
+        return true
+    }
+
+    private mutating func unary() throws -> Expr {
+        depth += 1
+        defer { depth -= 1 }
+        guard depth <= Self.maxDepth else {
+            throw EvalError("expression nested too deeply — split it across lines")
+        }
+        if peek == .minus {
+            i += 1
+            return .unaryMinus(try unary())
+        }
+        if peek == .plus { i += 1; return try unary() }
+        return try power()
+    }
+
+    private mutating func power() throws -> Expr {
+        let base = try postfix()
+        if peek == .caret {
+            i += 1
+            let exp = try unary()   // right-associative, allows 2^-3
+            return .binary(.pow, base, exp)
+        }
+        return base
+    }
+
+    private mutating func postfix() throws -> Expr {
+        var e = try primary()
+        loop: while let t = peek {
+            switch t {
+            case .memberDot:
+                i += 1
+                guard case .ident(let m)? = peek, ["x", "y", "z"].contains(m) else {
+                    throw EvalError("expected .x, .y or .z")
+                }
+                i += 1
+                e = .member(e, m)
+            case .degree:
+                i += 1   // trig is degree-based already; ° is cosmetic
+            default:
+                break loop
+            }
+        }
+        return e
+    }
+
+    private mutating func primary() throws -> Expr {
+        guard let t = peek else { throw EvalError("unexpected end of input") }
+        switch t {
+        case .number(let n):
+            i += 1
+            return .number(n)
+
+        case .ident(let name):
+            i += 1
+            if peek == .lparen {
+                i += 1
+                var args: [Expr] = []
+                if peek != .rparen {
+                    repeat {
+                        args.append(try expression())
+                        if peek == .comma { i += 1 } else { break }
+                    } while true
+                }
+                try expect(.rparen, "')'")
+                return .call(name, args)
+            }
+            return .ident(name)
+
+        case .lparen:
+            i += 1
+            var parts = [try expression()]
+            while peek == .comma {
+                i += 1
+                parts.append(try expression())
+            }
+            try expect(.rparen, "')'")
+            if parts.count == 1 { return parts[0] }
+            guard parts.count <= 3 else { throw EvalError("points have at most 3 coordinates") }
+            return .pointLiteral(parts)
+
+        case .langle, .lbracket:
+            let closing: Token = (t == .langle) ? .rangle : .rbracket
+            i += 1
+            var parts = [try expression()]
+            while peek == .comma {
+                i += 1
+                parts.append(try expression())
+            }
+            try expect(closing, t == .langle ? "'>'" : "']'")
+            guard (2...3).contains(parts.count) else {
+                throw EvalError("vectors need 2 or 3 components")
+            }
+            return .vecLiteral(parts)
+
+        case .pipe:
+            i += 1
+            let inner = try additive()
+            try expect(.pipe, "closing '|'")
+            return .magnitude(inner)
+
+        case .vecKeyword:
+            // A stray \vec inside an expression is cosmetic — but this is the
+            // one recursive path in the grammar that does NOT pass through
+            // unary(), so it needs its own copy of the depth guard. Bare `vec`
+            // lexes as the same token, and a pasted run of a few thousand
+            // recursed here unbounded and killed the process with SIGBUS.
+            depth += 1
+            defer { depth -= 1 }
+            guard depth <= Self.maxDepth else {
+                throw EvalError("expression nested too deeply — split it across lines")
+            }
+            i += 1
+            return try primary()
+
+        default:
+            throw EvalError("unexpected \(describe(t))")
+        }
+    }
+}
